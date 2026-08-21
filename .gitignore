@@ -1,1 +1,20 @@
-/target
+# Rust build output
+/target/
+**/*.rs.bk
+*.bk
+
+# Cargo lock file for libraries (keep for binaries, remove comment if preferred)
+# Cargo.lock
+
+# IDE and editor settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary test/scratch files
+testfile.txt
+*.tmp
+*.log

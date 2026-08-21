@@ -31,9 +31,9 @@ impl ShellState {
         while self.running {
             // 1. Render Prompt
             let prompt = Prompt::render(self.last_status);
-            print!("{}", prompt);
+            print!("{prompt}");
             if let Err(e) = io::stdout().flush() {
-                eprintln!("sibsh: failed to flush stdout: {}", e);
+                eprintln!("sibsh: failed to flush stdout: {e}");
                 break;
             }
 
@@ -63,13 +63,13 @@ impl ShellState {
                             return code;
                         }
                         Err(err) => {
-                            eprintln!("{}", err);
+                            eprintln!("{err}");
                             self.last_status = 1;
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("sibsh: read error: {}", e);
+                    eprintln!("sibsh: read error: {e}");
                     break;
                 }
             }

@@ -56,10 +56,7 @@ impl Builtins {
             "cat" => Self::builtin_cat(cmd_args),
             "true" => Ok(0),
             "false" => Ok(1),
-            _ => Err(ShellError::BuiltinError(format!(
-                "unknown builtin: {}",
-                cmd
-            ))),
+            _ => Err(ShellError::BuiltinError(format!("unknown builtin: {cmd}"))),
         }
     }
 
@@ -67,16 +64,13 @@ impl Builtins {
         let target_path = if args.is_empty() || args[0] == "~" {
             env::var("HOME").unwrap_or_else(|_| "/".to_string())
         } else if args[0] == "-" {
-            match &state.old_pwd {
-                Some(prev) => {
-                    let path_str = prev.to_string_lossy().to_string();
-                    println!("{}", path_str);
-                    path_str
-                }
-                None => {
-                    eprintln!("sibsh: cd: OLDPWD not set");
-                    return Ok(1);
-                }
+            if let Some(prev) = &state.old_pwd {
+                let path_str = prev.to_string_lossy().to_string();
+                println!("{path_str}");
+                path_str
+            } else {
+                eprintln!("sibsh: cd: OLDPWD not set");
+                return Ok(1);
             }
         } else {
             args[0].clone()
@@ -86,7 +80,7 @@ impl Builtins {
         let target = Path::new(&target_path);
 
         if let Err(e) = env::set_current_dir(target) {
-            eprintln!("sibsh: cd: {}: {}", target_path, e);
+            eprintln!("sibsh: cd: {target_path}: {e}");
             return Ok(1);
         }
 
@@ -101,7 +95,7 @@ impl Builtins {
                 Ok(0)
             }
             Err(e) => {
-                eprintln!("sibsh: pwd: {}", e);
+                eprintln!("sibsh: pwd: {e}");
                 Ok(1)
             }
         }
@@ -118,10 +112,10 @@ impl Builtins {
 
         let output = args[start_idx..].join(" ");
         if no_newline {
-            print!("{}", output);
+            print!("{output}");
             io::stdout().flush()?;
         } else {
-            println!("{}", output);
+            println!("{output}");
         }
         Ok(0)
     }
@@ -173,11 +167,11 @@ impl Builtins {
         let mut status = 0;
         for target in args {
             if Self::is_builtin(target) {
-                println!("{} is a shell builtin", target);
+                println!("{target} is a shell builtin");
             } else if let Some(path) = Self::resolve_in_path(target) {
                 println!("{} is {}", target, path.display());
             } else {
-                eprintln!("sibsh: type: {}: not found", target);
+                eprintln!("sibsh: type: {target}: not found");
                 status = 1;
             }
         }
@@ -203,7 +197,7 @@ impl Builtins {
 
     fn builtin_env() -> ShellResult<i32> {
         for (key, val) in env::vars() {
-            println!("{}={}", key, val);
+            println!("{key}={val}");
         }
         Ok(0)
     }
@@ -216,19 +210,17 @@ impl Builtins {
         for arg in args {
             if let Some((key, val)) = arg.split_once('=') {
                 if key.is_empty() {
-                    eprintln!("sibsh: export: `{}`: not a valid identifier", arg);
+                    eprintln!("sibsh: export: `{arg}`: not a valid identifier");
                     return Ok(1);
                 }
                 // SAFETY: Modifying environment variables in single-threaded REPL execution is safe.
                 unsafe {
                     env::set_var(key, val);
                 }
-            } else {
-                if env::var(arg).is_err() {
-                    // SAFETY: Modifying environment variables in single-threaded REPL execution is safe.
-                    unsafe {
-                        env::set_var(arg, "");
-                    }
+            } else if env::var(arg).is_err() {
+                // SAFETY: Modifying environment variables in single-threaded REPL execution is safe.
+                unsafe {
+                    env::set_var(arg, "");
                 }
             }
         }
@@ -267,7 +259,7 @@ impl Builtins {
                 .open(path_str);
 
             if let Err(e) = res {
-                eprintln!("sibsh: touch: cannot touch '{}': {}", path_str, e);
+                eprintln!("sibsh: touch: cannot touch '{path_str}': {e}");
                 status = 1;
             }
         }
@@ -278,16 +270,16 @@ impl Builtins {
         if args.is_empty() {
             let mut buffer = String::new();
             io::stdin().read_to_string(&mut buffer)?;
-            print!("{}", buffer);
+            print!("{buffer}");
             return Ok(0);
         }
 
         let mut status = 0;
         for path_str in args {
             match fs::read_to_string(path_str) {
-                Ok(contents) => print!("{}", contents),
+                Ok(contents) => print!("{contents}"),
                 Err(e) => {
-                    eprintln!("sibsh: cat: {}: {}", path_str, e);
+                    eprintln!("sibsh: cat: {path_str}: {e}");
                     status = 1;
                 }
             }

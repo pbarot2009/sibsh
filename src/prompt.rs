@@ -33,23 +33,13 @@ impl Prompt {
         let reset = "\x1b[0m";
 
         let status_indicator = if last_status != 0 {
-            format!("{}[{}]{} ", red, last_status, reset)
+            format!("{red}[{last_status}]{reset} ")
         } else {
             String::new()
         };
 
         format!(
-            "{}{}@{}{}:{}{}{} {}{}❯{} ",
-            green,
-            user,
-            hostname,
-            reset,
-            blue,
-            display_path,
-            reset,
-            status_indicator,
-            yellow,
-            reset
+            "{green}{user}@{hostname}{reset}:{blue}{display_path}{reset} {status_indicator}{yellow}❯{reset} "
         )
     }
 }

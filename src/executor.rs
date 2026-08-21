@@ -16,9 +16,7 @@ impl Executor {
 
         match command.status() {
             Ok(status) => {
-                let code = status
-                    .code()
-                    .unwrap_or(if status.success() { 0 } else { 1 });
+                let code = status.code().unwrap_or(i32::from(!status.success()));
                 Ok(code)
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {

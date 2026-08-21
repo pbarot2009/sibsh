@@ -13,11 +13,11 @@ pub enum ShellError {
 impl fmt::Display for ShellError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ShellError::Io(err) => write!(f, "sibsh: I/O error: {}", err),
-            ShellError::CommandNotFound(cmd) => write!(f, "sibsh: command not found: {}", cmd),
-            ShellError::BuiltinError(msg) => write!(f, "sibsh: {}", msg),
-            ShellError::ParseError(msg) => write!(f, "sibsh: syntax error: {}", msg),
-            ShellError::Exit(code) => write!(f, "exit with status {}", code),
+            ShellError::Io(err) => write!(f, "sibsh: I/O error: {err}"),
+            ShellError::CommandNotFound(cmd) => write!(f, "sibsh: command not found: {cmd}"),
+            ShellError::BuiltinError(msg) => write!(f, "sibsh: {msg}"),
+            ShellError::ParseError(msg) => write!(f, "sibsh: syntax error: {msg}"),
+            ShellError::Exit(code) => write!(f, "exit with status {code}"),
         }
     }
 }

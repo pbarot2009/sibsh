@@ -40,19 +40,19 @@ impl Builtins {
         let cmd_args = &args[1..];
 
         match cmd {
-            "cd" => Self::builtin_cd(state, cmd_args),
-            "pwd" => Self::builtin_pwd(),
+            "cd" => Ok(Self::builtin_cd(state, cmd_args)),
+            "pwd" => Ok(Self::builtin_pwd()),
             "echo" => Self::builtin_echo(cmd_args),
             "exit" => Self::builtin_exit(state, cmd_args),
-            "help" => Self::builtin_help(),
+            "help" => Ok(Self::builtin_help()),
             "clear" => Self::builtin_clear(),
-            "type" => Self::builtin_type(cmd_args),
-            "which" => Self::builtin_which(cmd_args),
-            "env" => Self::builtin_env(),
-            "export" | "setenv" => Self::builtin_export(cmd_args),
-            "unset" | "unsetenv" => Self::builtin_unset(cmd_args),
-            "history" => Self::builtin_history(state),
-            "touch" => Self::builtin_touch(cmd_args),
+            "type" => Ok(Self::builtin_type(cmd_args)),
+            "which" => Ok(Self::builtin_which(cmd_args)),
+            "env" => Ok(Self::builtin_env()),
+            "export" | "setenv" => Ok(Self::builtin_export(cmd_args)),
+            "unset" | "unsetenv" => Ok(Self::builtin_unset(cmd_args)),
+            "history" => Ok(Self::builtin_history(state)),
+            "touch" => Ok(Self::builtin_touch(cmd_args)),
             "cat" => Self::builtin_cat(cmd_args),
             "true" => Ok(0),
             "false" => Ok(1),
@@ -60,7 +60,7 @@ impl Builtins {
         }
     }
 
-    fn builtin_cd(state: &mut ShellState, args: &[String]) -> ShellResult<i32> {
+    fn builtin_cd(state: &mut ShellState, args: &[String]) -> i32 {
         let target_path = if args.is_empty() || args[0] == "~" {
             env::var("HOME").unwrap_or_else(|_| "/".to_string())
         } else if args[0] == "-" {
@@ -70,7 +70,7 @@ impl Builtins {
                 path_str
             } else {
                 eprintln!("sibsh: cd: OLDPWD not set");
-                return Ok(1);
+                return 1;
             }
         } else {
             args[0].clone()
@@ -81,22 +81,22 @@ impl Builtins {
 
         if let Err(e) = env::set_current_dir(target) {
             eprintln!("sibsh: cd: {target_path}: {e}");
-            return Ok(1);
+            return 1;
         }
 
         state.old_pwd = Some(current);
-        Ok(0)
+        0
     }
 
-    fn builtin_pwd() -> ShellResult<i32> {
+    fn builtin_pwd() -> i32 {
         match env::current_dir() {
             Ok(path) => {
                 println!("{}", path.display());
-                Ok(0)
+                0
             }
             Err(e) => {
                 eprintln!("sibsh: pwd: {e}");
-                Ok(1)
+                1
             }
         }
     }
@@ -130,7 +130,7 @@ impl Builtins {
         Err(ShellError::Exit(code))
     }
 
-    fn builtin_help() -> ShellResult<i32> {
+    fn builtin_help() -> i32 {
         println!("\x1b[1msibsh - Something Is Better Shell (Phase 1.1)\x1b[0m");
         println!("Type program names and arguments, then hit enter.\n");
         println!("Built-in Commands:");
@@ -149,7 +149,7 @@ impl Builtins {
         println!("  cat <file...>       Concatenate and print file contents");
         println!("  true / false        Return exit status 0 or 1");
         println!("  help                Show this help message");
-        Ok(0)
+        0
     }
 
     fn builtin_clear() -> ShellResult<i32> {
@@ -158,10 +158,10 @@ impl Builtins {
         Ok(0)
     }
 
-    fn builtin_type(args: &[String]) -> ShellResult<i32> {
+    fn builtin_type(args: &[String]) -> i32 {
         if args.is_empty() {
             eprintln!("sibsh: type: missing operand");
-            return Ok(1);
+            return 1;
         }
 
         let mut status = 0;
@@ -169,19 +169,19 @@ impl Builtins {
             if Self::is_builtin(target) {
                 println!("{target} is a shell builtin");
             } else if let Some(path) = Self::resolve_in_path(target) {
-                println!("{} is {}", target, path.display());
+                println!("{target} is {}", path.display());
             } else {
                 eprintln!("sibsh: type: {target}: not found");
                 status = 1;
             }
         }
-        Ok(status)
+        status
     }
 
-    fn builtin_which(args: &[String]) -> ShellResult<i32> {
+    fn builtin_which(args: &[String]) -> i32 {
         if args.is_empty() {
             eprintln!("sibsh: which: missing operand");
-            return Ok(1);
+            return 1;
         }
 
         let mut status = 0;
@@ -192,17 +192,17 @@ impl Builtins {
                 status = 1;
             }
         }
-        Ok(status)
+        status
     }
 
-    fn builtin_env() -> ShellResult<i32> {
+    fn builtin_env() -> i32 {
         for (key, val) in env::vars() {
             println!("{key}={val}");
         }
-        Ok(0)
+        0
     }
 
-    fn builtin_export(args: &[String]) -> ShellResult<i32> {
+    fn builtin_export(args: &[String]) -> i32 {
         if args.is_empty() {
             return Self::builtin_env();
         }
@@ -211,43 +211,43 @@ impl Builtins {
             if let Some((key, val)) = arg.split_once('=') {
                 if key.is_empty() {
                     eprintln!("sibsh: export: `{arg}`: not a valid identifier");
-                    return Ok(1);
+                    return 1;
                 }
-                // SAFETY: Modifying environment variables in single-threaded REPL execution is safe.
+                // SAFETY: Modifying environment variables in a single-threaded REPL is safe.
                 unsafe {
                     env::set_var(key, val);
                 }
             } else if env::var(arg).is_err() {
-                // SAFETY: Modifying environment variables in single-threaded REPL execution is safe.
+                // SAFETY: Modifying environment variables in a single-threaded REPL is safe.
                 unsafe {
                     env::set_var(arg, "");
                 }
             }
         }
-        Ok(0)
+        0
     }
 
-    fn builtin_unset(args: &[String]) -> ShellResult<i32> {
+    fn builtin_unset(args: &[String]) -> i32 {
         for arg in args {
-            // SAFETY: Modifying environment variables in single-threaded REPL execution is safe.
+            // SAFETY: Modifying environment variables in a single-threaded REPL is safe.
             unsafe {
                 env::remove_var(arg);
             }
         }
-        Ok(0)
+        0
     }
 
-    fn builtin_history(state: &ShellState) -> ShellResult<i32> {
+    fn builtin_history(state: &ShellState) -> i32 {
         for (idx, cmd) in state.history.iter().enumerate() {
-            println!("{:5}  {}", idx + 1, cmd);
+            println!("{:5}  {cmd}", idx + 1);
         }
-        Ok(0)
+        0
     }
 
-    fn builtin_touch(args: &[String]) -> ShellResult<i32> {
+    fn builtin_touch(args: &[String]) -> i32 {
         if args.is_empty() {
             eprintln!("sibsh: touch: missing file operand");
-            return Ok(1);
+            return 1;
         }
 
         let mut status = 0;
@@ -263,7 +263,7 @@ impl Builtins {
                 status = 1;
             }
         }
-        Ok(status)
+        status
     }
 
     fn builtin_cat(args: &[String]) -> ShellResult<i32> {

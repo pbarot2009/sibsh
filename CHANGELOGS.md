@@ -37,7 +37,7 @@ Phase 1.2 — I/O Redirection.
   contain spaces (`> "my file.txt"`).
 - New syntax errors: missing filename after an operator (`echo hi >`) and an
   expansion producing an empty filename (`> "$EMPTY"`).
-- New `ShellError::Redirection` variant with shell-grade messages
+- New `ShellError::Redirection` variant with clear messages
   (`sibsh: path: No such file or directory`); failed redirections skip the
   command entirely and set exit status `1`.
 - Test coverage: 10 parser unit tests plus an 18-case integration suite

@@ -115,7 +115,7 @@ exit 0
 
 - [x] **Phase 1.1**: Core REPL loop, argument parser, built-in commands, process execution.
 - [x] **Phase 1.2**: I/O Redirection (`>`, `>>`, `<`) for external commands and built-ins.
-  - Quote-aware parsing (`echo 'a > b'` is literal), attached (`>file`) and spaced (`> file`) forms, `$VAR` expansion inside filenames, shell-grade errors for missing filenames or unreadable/unwritable targets, and byte-safe `cat`.
+  - Quote-aware parsing (`echo 'a > b'` is literal), attached (`>file`) and spaced (`> file`) forms, `$VAR` expansion inside filenames, clear errors for missing filenames or unreadable/unwritable targets, and byte-safe `cat`.
 - [ ] **Phase 1.3**: Pipelines (`cmd1 | cmd2 | cmd3`).
 - [ ] **Phase 2.0**: Job control, signal handling (`SIGINT`, `SIGTSTP`), persistent history file.
 

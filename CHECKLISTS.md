@@ -1,15 +1,15 @@
 # sibsh — Project Checklists
 
-Living checklists for every phase of the `sibsh` roadmap.
+Project checklists for every phase of the `sibsh` roadmap.
 Check items off (`[x]`) as they are completed and verified. Each phase should be
-fully green before starting the next one.
+fully checked before starting the next one.
 
 > **Legend**
 > - `[ ]` not started · `[x]` done & verified · `(?)` needs a design decision first
 
 ---
 
-## Phase 0 — Project Setup & Tooling ✅ COMPLETE
+## Phase 0 — Project Setup & Tooling (complete)
 
 - [x] `Cargo.toml` at the repository root with:
   - [x] `name = "sibsh"`, `version = "0.1.2"`, `edition = "2024"`
@@ -25,7 +25,7 @@ fully green before starting the next one.
 
 ## Phase 1 — Core Shell (single command per line)
 
-### 1.1 — REPL, Parser, Built-ins, Execution ✅ COMPLETE
+### 1.1 — REPL, Parser, Built-ins, Execution (complete)
 
 - [x] Interactive REPL loop (`src/shell.rs`) with prompt render → read → history → dispatch
 - [x] Colored prompt (`src/prompt.rs`): `user@host:path ❯` plus red `[status]` on failure
@@ -55,13 +55,13 @@ Known polish items carried into later phases:
 
 ---
 
-### 1.2 — I/O Redirection ✅ COMPLETE (v0.1.2, 2026-08-22)
+### 1.2 — I/O Redirection (done in v0.1.2)
 
 Goal: support `cmd > file`, `cmd >> file`, `cmd < file`, and combinations,
 for **both external commands and built-ins**, with correct precedence and
-shell-grade error messages.
+clear error messages.
 
-#### Design decisions (settle before coding) — RESOLVED
+#### Design decisions (settled)
 
 - [x] Token-level detection: operators recognized inside the tokenizer's
       quote-state machine only when unquoted; quoted `'>'` stays a literal argument
@@ -72,7 +72,7 @@ shell-grade error messages.
 - [x] Out of scope for 1.2 (defer): `2>` / `&>` fd numbers, heredocs `<<`,
       here-strings `<<<`, `n>&m` duplication, `<>`
 
-#### Parser changes (`src/parser.rs`) — DONE
+#### Parser changes (`src/parser.rs`) (done)
 
 - [x] Recognize `>` (truncate/create), `>>` (append/create), `<` (read) **only in
       `ParseState::Normal`** — never inside single/double quotes
@@ -86,7 +86,7 @@ shell-grade error messages.
 - [x] Public API changed to `parse(line, last_status) -> ParsedCommand`; all call sites updated
 - [x] Expansions (`$VAR`, `$?`) work inside redirected filenames
 
-#### Executor changes (`src/executor.rs`) — DONE
+#### Executor changes (`src/executor.rs`) (done)
 
 - [x] Apply `<` : open file read-only, wired via `Stdio::from(File)`
 - [x] Apply `>` : create/truncate, wire stdout
@@ -97,7 +97,7 @@ shell-grade error messages.
 - [x] Inherited stderr and interactive stdin preserved for non-redirected streams
 - [x] Exit status still propagates correctly through redirection
 
-#### Built-in integration (`src/builtins.rs`, `src/shell.rs`) — DONE
+#### Built-in integration (`src/builtins.rs`, `src/shell.rs`) (done)
 
 - [x] Stdout of built-ins redirects (`echo hi > f.txt` writes the file)
 - [x] Implementation: explicit `Box<dyn Write>` output handle built per call from
@@ -108,7 +108,7 @@ shell-grade error messages.
 - [x] `export`, `unset`, `exit`, `true`, `false` honor side effects regardless of redirect
 - [x] Redirection errors report like bash and never kill the REPL
 
-#### REPL / state (`src/shell.rs`) — DONE
+#### REPL / state (`src/shell.rs`) (done)
 
 - [x] Dispatch line as `ParsedCommand { args, redirects }`; `last_status` semantics intact
 - [x] Failed redirection sets `last_status = 1` and continues the loop
@@ -117,25 +117,25 @@ shell-grade error messages.
 - [x] REPL reads stdin per-call (lock no longer held across dispatch), fixing a
       deadlock where builtin execution could block on the held lock
 
-#### Edge cases & correctness matrix — ALL 15 VERIFIED PASS (unit + integration + manual)
+#### Test matrix — all 15 cases verified passing
 
 | # | Input | Result |
 |---|-------|--------|
-| 1 | `echo hello > out.txt` | ✅ file contains `hello\n`, nothing on terminal |
-| 2 | `echo a > f` then `echo b >> f` | ✅ file contains `a\nb\n` |
-| 3 | `echo x > f` then `echo y > f` | ✅ truncated to `y\n` |
-| 4 | `cat < in.txt` | ✅ prints contents |
-| 5 | `sort < unsorted.txt > sorted.txt` | ✅ both directions at once |
-| 6 | `echo 'a > b'` | ✅ literal text, NO redirect |
-| 7 | `echo ">"` | ✅ literal `>` printed |
-| 8 | `echo hi >out.txt` (no space) | ✅ works |
-| 9 | `cat < missing.txt` | ✅ error, status 1, `cat` never runs |
-| 10 | `echo hi > /root/nope/x` | ✅ path error, status 1 |
-| 11 | `echo hi >` (nothing after) | ✅ syntax error message |
-| 12 | `echo $USER > who.txt` | ✅ expansion in filename AND content |
-| 13 | `false > log.txt` | ✅ log created/empty, status 1 |
-| 14 | `cat < f.txt > g.txt` | ✅ g gets f's copy |
-| 15 | `wc -l < f` via external cmd | ✅ interop with real binaries confirmed |
+| 1 | `echo hello > out.txt` | file contains `hello\n`, nothing on terminal |
+| 2 | `echo a > f` then `echo b >> f` | file contains `a\nb\n` |
+| 3 | `echo x > f` then `echo y > f` | truncated to `y\n` |
+| 4 | `cat < in.txt` | prints contents |
+| 5 | `sort < unsorted.txt > sorted.txt` | both directions at once |
+| 6 | `echo 'a > b'` | literal text, no redirect |
+| 7 | `echo ">"` | literal `>` printed |
+| 8 | `echo hi >out.txt` (no space) | works |
+| 9 | `cat < missing.txt` | error, status 1, `cat` never runs |
+| 10 | `echo hi > /root/nope/x` | path error, status 1 |
+| 11 | `echo hi >` (nothing after) | syntax error message |
+| 12 | `echo $USER > who.txt` | expansion in filename and content |
+| 13 | `false > log.txt` | log created empty, status 1 |
+| 14 | `cat < f.txt > g.txt` | g gets f's copy |
+| 15 | `wc -l < f` via external cmd | works with real binaries |
 
 | # | Input | Expected |
 |---|-------|----------|
@@ -154,21 +154,21 @@ shell-grade error messages.
 | 13 | `false > log.txt` | log created/empty, status 1 |
 | 14 | `cat < f.txt > g.txt` | g gets f's copy |
 
-#### Testing & verification for 1.2 — ALL DONE
+#### Testing and verification for 1.2 (done)
 
 - [x] Manually ran every row of the matrix above through the release binary
 - [x] Added `tests/integration.rs`: 18 tests driving the real binary via stdin,
-      covering the full matrix + Phase 1.1 regressions (std-only)
+      covering the full matrix plus Phase 1.1 regressions (std-only)
 - [x] 10 parser unit tests in `src/parser.rs`
-- [x] `cargo clippy --all-targets`: **0 warnings**
-- [x] `cargo test`: **28/28 passing** (10 unit + 18 integration)
+- [x] `cargo clippy --all-targets`: 0 warnings
+- [x] `cargo test`: 28/28 passing (10 unit + 18 integration)
 - [x] README updated: Features section, redirection examples, roadmap box `[x]`
 - [x] CHANGELOGS.md released as `[0.1.2] - 2026-08-22`; Cargo.toml bumped to 0.1.2
 - [x] `help` output updated with redirection syntax
 
 ---
 
-### 1.3 — Pipelines ⭐ NEXT PHASE (planned v0.2.0)
+### 1.3 — Pipelines (next phase, planned for v0.2.0)
 
 Goal: `cmd1 | cmd2 | cmd3` — stdout of each stage feeds stdin of the next,
 stages run concurrently, std-only.
@@ -205,7 +205,7 @@ stages run concurrently, std-only.
 - [ ] Redirections bind tighter than pipes (`cmd > f | cmd2`: first stage writes
       to file) — verify matches bash
 
-#### Edge cases & correctness matrix (test ALL of these)
+#### Test matrix (all cases must pass)
 
 | # | Input | Expected |
 |---|-------|----------|
@@ -263,7 +263,7 @@ precedence and exit-status semantics.
 - [ ] Works across builtins and external commands uniformly
 - [ ] `exit` mid-list still exits immediately
 
-#### Edge cases & correctness matrix (test ALL of these)
+#### Test matrix (all cases must pass)
 
 | # | Input | Expected |
 |---|-------|----------|
@@ -322,7 +322,7 @@ applied after quoting/expansion but before execution.
 - [ ] Escaped metacharacters (`\*`, `'*)`) stay literal
 - [ ] Redirection targets expand too (`cat < data?.txt`)
 
-#### Edge cases & correctness matrix (test ALL of these)
+#### Test matrix (all cases must pass)
 
 | # | Input | Expected |
 |---|-------|----------|
@@ -366,7 +366,7 @@ applied after quoting/expansion but before execution.
 
 ---
 
-## Definition of Done (every phase) — Phase 0/1.1/1.2 STATUS: MET
+## Definition of Done (every phase) — met for Phases 0, 1.1, 1.2
 
 - [x] All checklist items checked *(Phases 0, 1.1, 1.2)*
 - [x] `cargo build --release` warning-free

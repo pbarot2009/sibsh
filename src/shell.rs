@@ -1,9 +1,9 @@
 use crate::builtins::Builtins;
 use crate::error::{ShellError, ShellResult};
-use crate::executor::Executor;
+use crate::executor::{Executor, RedirectHandles};
 use crate::parser::Parser;
 use crate::prompt::Prompt;
-use std::io::{self, BufRead, Write};
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 pub struct ShellState {
@@ -26,7 +26,6 @@ impl ShellState {
     /// Primary Interactive REPL Loop
     pub fn run_repl(&mut self) -> i32 {
         let stdin = io::stdin();
-        let mut reader = stdin.lock();
 
         while self.running {
             // 1. Render Prompt
@@ -37,9 +36,10 @@ impl ShellState {
                 break;
             }
 
-            // 2. Read user input
+            // 2. Read user input (per-call lock so builtins like `cat` can
+            //    read stdin themselves without contending on the lock)
             let mut line = String::new();
-            match reader.read_line(&mut line) {
+            match stdin.read_line(&mut line) {
                 Ok(0) => {
                     // EOF reached (Ctrl+D)
                     println!("\nexit");
@@ -79,16 +79,24 @@ impl ShellState {
     }
 
     pub fn dispatch_line(&mut self, line: &str) -> ShellResult<i32> {
-        let tokens = Parser::parse(line, self.last_status)?;
-        if tokens.is_empty() {
+        let command = Parser::parse(line, self.last_status)?;
+        if command.args.is_empty() {
             return Ok(0);
         }
 
-        let cmd = &tokens[0];
-        if Builtins::is_builtin(cmd) {
-            Builtins::execute(self, &tokens)
+        // Open all redirection targets up front; on failure the command must
+        // not run and the error propagates to the REPL (status 1).
+        let handles = RedirectHandles::open(&command.redirects)?;
+
+        let cmd = &command.args[0];
+        let result = if Builtins::is_builtin(cmd) {
+            Builtins::execute(self, &command.args, &handles)
         } else {
-            Executor::execute(cmd, &tokens[1..])
-        }
+            Executor::execute(cmd, &command.args[1..], &handles)
+        };
+
+        // Make sure builtin output lands before the next prompt renders.
+        io::stdout().flush()?;
+        result
     }
 }

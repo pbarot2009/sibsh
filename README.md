@@ -4,11 +4,12 @@ sibsh (Something Is Better Shell) is a lightweight, zero-dependency Unix shell w
 
 The goal is to build a fast, reliable shell from scratch using only the Rust standard library.
 
-## Features (Phase 1.1)
+## Features (Phase 1.2)
 
 - **Zero External Dependencies**: Built entirely using Rust standard library (`std`).
 - **Interactive REPL**: Read-Eval-Print loop with custom prompt, error status display, and EOF handling.
 - **Command Parser**: Supports single quotes (`'...'`), double quotes (`"..."`), escape characters, and environment variable expansion (`$VAR`, `$?`).
+- **I/O Redirection**: `cmd > file` (create/truncate), `cmd >> file` (append), and `cmd < file` (stdin) — for external commands **and** built-ins, with quote-aware parsing so `echo 'a > b'` stays literal.
 - **External Command Execution**: Resolves binaries in `$PATH` and handles process execution with standard I/O inheritance.
 - **In-Memory History**: Tracks commands entered during the active session.
 - **16 Built-in Commands**: Essential shell commands implemented natively.
@@ -29,7 +30,7 @@ The goal is to build a fast, reliable shell from scratch using only the Rust sta
 | `unset [KEY]` | Remove an environment variable |
 | `history` | List command history for the current session |
 | `touch [file...]` | Create empty files or update file timestamps |
-| `cat [file...]` | Output file contents to standard output (or read from stdin) |
+| `cat [file...]` | Output file contents to standard output (or read from stdin); byte-safe |
 | `true` | Return exit code 0 |
 | `false` | Return exit code 1 |
 | `help` | Display built-in command reference |
@@ -96,6 +97,16 @@ which git
 false
 echo $?
 
+# I/O redirection
+echo "Hello, World" > greeting.txt
+cat greeting.txt
+echo "Second line" >> greeting.txt
+sort < names.txt > sorted.txt
+wc -l < sorted.txt
+
+# Quoted operators are literal text
+echo 'a > b'    # prints: a > b
+
 # Exit session
 exit 0
 ```
@@ -103,7 +114,8 @@ exit 0
 ## Roadmap
 
 - [x] **Phase 1.1**: Core REPL loop, argument parser, built-in commands, process execution.
-- [ ] **Phase 1.2**: I/O Redirection (`>`, `>>`, `<`).
+- [x] **Phase 1.2**: I/O Redirection (`>`, `>>`, `<`) for external commands and built-ins.
+  - Quote-aware parsing (`echo 'a > b'` is literal), attached (`>file`) and spaced (`> file`) forms, `$VAR` expansion inside filenames, clear errors for missing filenames or unreadable/unwritable targets, and byte-safe `cat`.
 - [ ] **Phase 1.3**: Pipelines (`cmd1 | cmd2 | cmd3`).
 - [ ] **Phase 2.0**: Job control, signal handling (`SIGINT`, `SIGTSTP`), persistent history file.
 

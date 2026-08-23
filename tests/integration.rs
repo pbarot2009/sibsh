@@ -10,6 +10,12 @@ fn run_shell(script: &str) -> (String, i32) {
 }
 
 fn run_shell_with(script: &str, extra_env: &[(&str, &str)]) -> (String, i32) {
+    let (out, _, code) = run_shell_full(script, extra_env);
+    (out, code)
+}
+
+/// Like `run_shell_with`, but also returns captured stderr.
+fn run_shell_full(script: &str, extra_env: &[(&str, &str)]) -> (String, String, i32) {
     use std::io::Write;
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_sibsh"))
@@ -37,6 +43,7 @@ fn run_shell_with(script: &str, extra_env: &[(&str, &str)]) -> (String, i32) {
     let output = child.wait_with_output().expect("failed to wait");
     (
         String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
         output.status.code().unwrap_or(-1),
     )
 }
@@ -693,4 +700,194 @@ fn run_shell_in(dir: &std::path::Path, script: &str) -> (String, i32) {
         String::from_utf8_lossy(&output.stdout).to_string(),
         output.status.code().unwrap_or(-1),
     )
+}
+
+// ---- Phase 1.3: Pipelines (matrix from CHECKLISTS.md) ----
+
+#[test]
+fn matrix_1_pipeline_two_stages_builtin_to_external() {
+    let (out, code) = run_shell("echo hello | cat\n");
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"hello".to_string()), "{out}");
+}
+
+#[test]
+fn matrix_2_pipeline_sorts_lines() {
+    let (out, code) = run_shell("printf 'b\\na\\n' | sort\n");
+    assert_eq!(code, 0);
+    let lines = visible_lines(&out);
+    let pos_a = lines.iter().position(|l| l == "a").expect("a sorted first");
+    let pos_b = lines
+        .iter()
+        .position(|l| l == "b")
+        .expect("b sorted second");
+    assert!(pos_a < pos_b, "sort order violated: {lines:?}");
+}
+
+#[test]
+fn matrix_3_three_stage_chain_counts_correctly() {
+    let (out, code) = run_shell("printf 'x1\\nx2\\nx3\\nother\\n' | grep ^x | wc -l\n");
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"3".to_string()), "{out}");
+}
+
+#[test]
+fn matrix_4_yes_head_terminates_cleanly() {
+    // `yes` must die of SIGPIPE once `head` exits — no leaked write end may
+    // keep it alive (that would hang this test).
+    let (out, code) = run_shell("yes | head -5\ntrue\n");
+    assert_eq!(code, 0);
+    assert_eq!(
+        visible_lines(&out)
+            .iter()
+            .filter(|l| l.as_str() == "y")
+            .count(),
+        5,
+        "exactly five y lines expected: {out}"
+    );
+}
+
+#[test]
+fn matrix_5_unknown_first_stage_reports_but_last_wins() {
+    let (out, err, code) = run_shell_full("nosuchcmd_zz | cat\ntrue\n", &[]);
+    assert_eq!(code, 0, "overall status comes from the last stage");
+    assert!(err.contains("command not found"), "stderr: {err}");
+    // The pipeline still drained; the shell continued to `true`.
+    assert!(!plain_text(&out).is_empty());
+}
+
+#[test]
+fn matrix_6_history_builtin_feeds_pipeline() {
+    // History records each line as typed. Only `echo markerline` ends with
+    // the marker (the pipeline line itself ends with a quote), so grep -c
+    // must report exactly one.
+    let script = "echo markerline\nhistory | grep -c 'markerline$'\ntrue\n";
+    let (out, code) = run_shell(script);
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"1".to_string()), "{out}");
+}
+
+#[test]
+fn matrix_7_redirect_and_pipe_mix_works() {
+    let input = tmpfile("p7_in.txt");
+    let output = tmpfile("p7_out.txt");
+    fs::write(&input, "pear\napple\n").unwrap();
+    let (_, code) = run_shell(&format!("cat < {input} | sort > {output}\n"));
+    assert_eq!(code, 0);
+    assert_eq!(fs::read_to_string(&output).unwrap(), "apple\npear\n");
+    cleanup!(input, output);
+}
+
+#[test]
+fn matrix_8_false_true_overall_status_zero() {
+    let (_, code) = run_shell("false | true\n");
+    assert_eq!(code, 0, "last stage wins");
+}
+
+#[test]
+fn matrix_9_true_false_overall_status_one() {
+    let (_, code) = run_shell("true | false\n");
+    assert_eq!(code, 1, "last stage wins");
+}
+
+#[test]
+fn matrix_10_quoted_pipe_is_literal_no_pipeline() {
+    let (out, code) = run_shell("echo 'a | b'\n");
+    assert_eq!(code, 0);
+    assert!(
+        visible_lines(&out).contains(&"a | b".to_string()),
+        "literal text expected: {out}"
+    );
+}
+
+#[test]
+fn stress_nine_stages_eight_pipes_complete_without_hang() {
+    let chain = "echo deep | cat | cat | cat | cat | cat | cat | cat | cat\n";
+    let (out, code) = run_shell(chain);
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"deep".to_string()), "{out}");
+}
+
+#[test]
+fn builtin_mid_pipeline_passes_through() {
+    let (out, code) = run_shell("printf 'b\\na\\n' | cat | sort\n");
+    assert_eq!(code, 0);
+    let lines = visible_lines(&out);
+    let pos_a = lines.iter().position(|l| l == "a").expect("a present");
+    let pos_b = lines.iter().position(|l| l == "b").expect("b present");
+    assert!(
+        pos_a < pos_b,
+        "cat (builtin) mid-chain broke order: {lines:?}"
+    );
+}
+
+#[test]
+fn builtin_last_stage_reads_from_pipe() {
+    let (out, code) = run_shell("printf 'hello-from-pipe\\n' | cat\n");
+    assert_eq!(code, 0);
+    assert!(
+        visible_lines(&out).contains(&"hello-from-pipe".to_string()),
+        "{out}"
+    );
+}
+
+#[test]
+fn pipeline_syntax_errors_reported_and_shell_survives() {
+    for bad in ["| cat", "cat |", "cat | | wc -l", "cat || wc -l"] {
+        let (out, err, code) = run_shell_full(&format!("{bad}\necho survived\n"), &[]);
+        assert_eq!(code, 0, "shell must survive {bad:?}");
+        assert!(err.contains("syntax error"), "stderr for {bad:?}: {err}");
+        assert!(
+            visible_lines(&out).contains(&"survived".to_string()),
+            "next command ran after {bad:?}: {out}"
+        );
+    }
+}
+
+#[test]
+fn redirect_binds_tighter_than_pipe() {
+    let f = tmpfile("p_bind.txt");
+    let (out, _, _) = run_shell_full(&format!("echo hi > {f} | cat\n"), &[]);
+    // First stage writes to the file; downstream sees immediate EOF.
+    assert_eq!(fs::read_to_string(&f).unwrap(), "hi\n");
+    assert!(
+        !visible_lines(&out).contains(&"hi".to_string()),
+        "nothing reaches the terminal: {out}"
+    );
+    cleanup!(f);
+}
+
+#[test]
+fn alias_expands_in_each_pipeline_stage() {
+    let config = tmpfile("cfg_pipe.toml");
+    fs::write(&config, "[aliases]\npl = \"echo piped\"\n").unwrap();
+    let (out, code) = run_shell_with("pl | cat\n", &[("SIBSH_CONFIG", config.as_str())]);
+    assert_eq!(code, 0);
+    assert!(
+        visible_lines(&out).contains(&"piped".to_string()),
+        "alias must expand inside pipelines: {out}"
+    );
+    cleanup!(config);
+}
+
+#[test]
+fn pipeline_failure_sets_prompt_badge_status() {
+    let (out, _) = run_shell("true | false\necho after=$?\n");
+    assert!(
+        plain_text(&out).contains("[1 \u{2718}]"),
+        "failure badge expected: {out}"
+    );
+    assert!(
+        visible_lines(&out).contains(&"after=1".to_string()),
+        "{out}"
+    );
+}
+
+#[test]
+fn pipeline_output_larger_than_pipe_buffer_completes() {
+    // 256 KiB forces multiple pipe-buffer round trips between stages; any
+    // missing EOF or wrong wait order would deadlock here.
+    let (out, code) = run_shell("head -c 262144 /dev/zero | wc -c\n");
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"262144".to_string()), "{out}");
 }

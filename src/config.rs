@@ -95,9 +95,9 @@ gs = "git status"
         if let Ok(path) = env::var("SIBSH_CONFIG") {
             return Some(PathBuf::from(path));
         }
-        env::var("HOME").ok().map(|home| {
-            PathBuf::from(home).join(".sibsh").join("sibsh.toml")
-        })
+        env::var("HOME")
+            .ok()
+            .map(|home| PathBuf::from(home).join(".sibsh").join("sibsh.toml"))
     }
 
     /// Writes the commented template when the default config file does not
@@ -209,14 +209,15 @@ fn parse_table(text: &str) -> Result<Table, String> {
         }
 
         let Some((key, value)) = line.split_once('=') else {
-            return Err(format!("line {lineno}: expected `key = value`, got `{line}`"));
+            return Err(format!(
+                "line {lineno}: expected `key = value`, got `{line}`"
+            ));
         };
         let key = key.trim();
         if key.is_empty() {
             return Err(format!("line {lineno}: empty key"));
         }
-        let value = parse_value(value.trim())
-            .map_err(|msg| format!("line {lineno}: {msg}"))?;
+        let value = parse_value(value.trim()).map_err(|msg| format!("line {lineno}: {msg}"))?;
         table.insert(format!("{section}{key}"), value);
     }
 
@@ -276,7 +277,9 @@ fn parse_value(text: &str) -> Result<Value, String> {
         }
         return Ok(Value::Array(items));
     }
-    Err(format!("unsupported value `{text}` (use string, number, bool, or string array)"))
+    Err(format!(
+        "unsupported value `{text}` (use string, number, bool, or string array)"
+    ))
 }
 
 #[cfg(test)]
@@ -314,10 +317,9 @@ mod tests {
 
     #[test]
     fn comments_and_blank_lines_ignored() {
-        let config = Config::from_str(
-            "# full-line comment\n\nprompt = \"x\" # trailing comment\n# more\n",
-        )
-        .expect("valid config");
+        let config =
+            Config::from_str("# full-line comment\n\nprompt = \"x\" # trailing comment\n# more\n")
+                .expect("valid config");
         assert_eq!(config.prompt.as_deref(), Some("x"));
     }
 
@@ -375,10 +377,9 @@ mod tests {
 
     #[test]
     fn unknown_keys_and_sections_are_ignored() {
-        let config = Config::from_str(
-            "unknown_key = \"x\"\nnested = true\n[some_table]\nfoo = 1\n",
-        )
-        .expect("valid config");
+        let config =
+            Config::from_str("unknown_key = \"x\"\nnested = true\n[some_table]\nfoo = 1\n")
+                .expect("valid config");
         assert!(config.prompt.is_none());
         assert!(config.aliases.is_empty());
         assert!(config.imports.is_empty());
@@ -387,10 +388,9 @@ mod tests {
     #[test]
     fn non_string_values_in_known_keys_are_ignored() {
         // A wrong type must not crash or misparse; the key falls back to default.
-        let config = Config::from_str(
-            "prompt = 42\nhistory_limit = \"many\"\nimports = \"not-an-array\"\n",
-        )
-        .expect("valid config");
+        let config =
+            Config::from_str("prompt = 42\nhistory_limit = \"many\"\nimports = \"not-an-array\"\n")
+                .expect("valid config");
         assert!(config.prompt.is_none());
         assert_eq!(config.history_limit, None);
         assert!(config.imports.is_empty());
@@ -412,16 +412,14 @@ mod tests {
 
     #[test]
     fn inline_comment_after_number_and_bool() {
-        let config =
-            Config::from_str("history_limit = 250 # capped\nflag = true # ignored key\n")
-                .expect("valid");
+        let config = Config::from_str("history_limit = 250 # capped\nflag = true # ignored key\n")
+            .expect("valid");
         assert_eq!(config.history_limit, Some(250));
     }
 
     #[test]
     fn array_with_trailing_comma_and_spaces() {
-        let config =
-            Config::from_str("imports = [ \"~/a.sh\" , \"~/b.sh\" , ]\n").expect("valid");
+        let config = Config::from_str("imports = [ \"~/a.sh\" , \"~/b.sh\" , ]\n").expect("valid");
         assert_eq!(config.imports, vec!["~/a.sh", "~/b.sh"]);
     }
 
@@ -478,9 +476,23 @@ mod tests {
         let config =
             Config::from_str(Config::TEMPLATE).expect("template must be valid TOML-subset");
         assert_eq!(config.history_limit, Some(1000));
-        assert!(config.prompt.is_none(), "template prompt stays commented out");
-        assert!(config.imports.is_empty(), "template imports stay commented out");
-        assert!(config.aliases.contains(&("ll".to_string(), "ls -la".to_string())));
-        assert!(config.aliases.contains(&("gs".to_string(), "git status".to_string())));
+        assert!(
+            config.prompt.is_none(),
+            "template prompt stays commented out"
+        );
+        assert!(
+            config.imports.is_empty(),
+            "template imports stay commented out"
+        );
+        assert!(
+            config
+                .aliases
+                .contains(&("ll".to_string(), "ls -la".to_string()))
+        );
+        assert!(
+            config
+                .aliases
+                .contains(&("gs".to_string(), "git status".to_string()))
+        );
     }
 }

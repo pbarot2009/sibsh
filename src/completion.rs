@@ -478,7 +478,10 @@ mod tests {
         assert!(c.candidates.contains(&"echo".to_string()));
         assert!(c.candidates.contains(&"history".to_string()));
         // PATH executables are included too (e.g. ls on any Unix system).
-        assert!(c.candidates.contains(&"ls".to_string()), "ls should be found in $PATH");
+        assert!(
+            c.candidates.contains(&"ls".to_string()),
+            "ls should be found in $PATH"
+        );
         assert!(c.insert.is_empty());
     }
 
@@ -547,7 +550,10 @@ mod tests {
     #[test]
     fn common_prefix_handles_multibyte() {
         assert_eq!(common_prefix(&["ab".into(), "abc".into()]), "ab");
-        assert_eq!(common_prefix(&["\u{e9}x".into(), "\u{e9}y".into()]), "\u{e9}");
+        assert_eq!(
+            common_prefix(&["\u{e9}x".into(), "\u{e9}y".into()]),
+            "\u{e9}"
+        );
         assert_eq!(common_prefix(&[]), "");
     }
 

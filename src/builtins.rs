@@ -11,9 +11,8 @@ pub struct Builtins;
 impl Builtins {
     /// All builtin names, used by `help`, completion, and `is_builtin`.
     pub const NAMES: [&str; 19] = [
-        "cd", "pwd", "echo", "exit", "help", "clear", "type", "which", "env",
-        "export", "setenv", "unset", "unsetenv", "history", "touch", "cat",
-        "true", "false", "alias",
+        "cd", "pwd", "echo", "exit", "help", "clear", "type", "which", "env", "export", "setenv",
+        "unset", "unsetenv", "history", "touch", "cat", "true", "false", "alias",
     ];
 
     pub fn is_builtin(cmd: &str) -> bool {
@@ -183,24 +182,54 @@ impl Builtins {
     fn builtin_help(out: &mut dyn Write) -> i32 {
         let _ = writeln!(out, "\x1b[1msibsh - Something Is Better Shell\x1b[0m");
         let _ = writeln!(out, "Type program names and arguments, then hit enter.");
-        let _ = writeln!(out, "Tab completes commands and file paths; Up/Down browse history.");
-        let _ = writeln!(out, "Redirection: cmd > file (create), cmd >> file (append), cmd < file (stdin)");
-        let _ = writeln!(out, "Config: ~/.sibsh/sibsh.toml supports prompt, aliases, and bashrc/zshrc imports\n");
+        let _ = writeln!(
+            out,
+            "Tab completes commands and file paths; Up/Down browse history."
+        );
+        let _ = writeln!(
+            out,
+            "Redirection: cmd > file (create), cmd >> file (append), cmd < file (stdin)"
+        );
+        let _ = writeln!(
+            out,
+            "Config: ~/.sibsh/sibsh.toml supports prompt, aliases, and bashrc/zshrc imports\n"
+        );
         let _ = writeln!(out, "Built-in Commands:");
-        let _ = writeln!(out, "  cd <dir>            Change working directory (supports ~, -)");
+        let _ = writeln!(
+            out,
+            "  cd <dir>            Change working directory (supports ~, -)"
+        );
         let _ = writeln!(out, "  pwd                 Print current working directory");
         let _ = writeln!(out, "  echo [-n] <args>    Print text to stdout");
         let _ = writeln!(out, "  exit [code]         Exit the shell");
         let _ = writeln!(out, "  clear               Clear the terminal screen");
-        let _ = writeln!(out, "  type <cmd>          Describe how command would be interpreted");
+        let _ = writeln!(
+            out,
+            "  type <cmd>          Describe how command would be interpreted"
+        );
         let _ = writeln!(out, "  which <cmd>         Locate a program in $PATH");
-        let _ = writeln!(out, "  env                 Display all environment variables");
-        let _ = writeln!(out, "  export KEY=VAL      Set an environment variable (export KEY marks it empty)");
+        let _ = writeln!(
+            out,
+            "  env                 Display all environment variables"
+        );
+        let _ = writeln!(
+            out,
+            "  export KEY=VAL      Set an environment variable (export KEY marks it empty)"
+        );
         let _ = writeln!(out, "  unset KEY           Remove an environment variable");
         let _ = writeln!(out, "  history             Show command history");
-        let _ = writeln!(out, "  touch <file...>     Create files or update their modification time");
-        let _ = writeln!(out, "  cat <file...>       Concatenate and print file contents");
-        let _ = writeln!(out, "  alias               List aliases; alias name='value' defines one");
+        let _ = writeln!(
+            out,
+            "  touch <file...>     Create files or update their modification time"
+        );
+        let _ = writeln!(
+            out,
+            "  cat <file...>       Concatenate and print file contents"
+        );
+        let _ = writeln!(
+            out,
+            "  alias               List aliases; alias name='value' defines one"
+        );
         let _ = writeln!(out, "  unalias <name>      Remove an alias");
         let _ = writeln!(out, "  true / false        Return exit status 0 or 1");
         let _ = writeln!(out, "  help                Show this help message");

@@ -252,16 +252,23 @@ fn config_aliases_from_toml_expand() {
     let config = tmpfile("cfg.toml");
     fs::write(&config, "[aliases]\nhello = \"echo world\"\n").unwrap();
 
-    let (out, code) = run_shell_with("hello\nalias\nunalias hello\nhello\ntrue\n", &[
-        ("SIBSH_CONFIG", config.as_str()),
-    ]);
+    let (out, code) = run_shell_with(
+        "hello\nalias\nunalias hello\nhello\ntrue\n",
+        &[("SIBSH_CONFIG", config.as_str())],
+    );
     assert_eq!(code, 0);
     let lines = visible_lines(&out);
-    assert!(lines.contains(&"world".to_string()), "alias must expand: {lines:?}");
+    assert!(
+        lines.contains(&"world".to_string()),
+        "alias must expand: {lines:?}"
+    );
     assert!(lines.iter().any(|l| l.contains("hello='echo world'")));
     // After unalias, `hello` is no longer a command.
     let after = lines.iter().position(|l| l == "world").unwrap_or(0);
-    assert!(!lines[after + 1..].contains(&"world".to_string()), "unalias must remove it: {lines:?}");
+    assert!(
+        !lines[after + 1..].contains(&"world".to_string()),
+        "unalias must remove it: {lines:?}"
+    );
     cleanup!(config);
 }
 
@@ -285,8 +292,14 @@ fn config_imports_run_bashrc_style_exports() {
     );
     assert_eq!(code, 0);
     let lines = visible_lines(&out);
-    assert!(lines.contains(&"imported-ran".to_string()), "import lines must run: {lines:?}");
-    assert!(lines.contains(&"value=from-import".to_string()), "export from import: {lines:?}");
+    assert!(
+        lines.contains(&"imported-ran".to_string()),
+        "import lines must run: {lines:?}"
+    );
+    assert!(
+        lines.contains(&"value=from-import".to_string()),
+        "export from import: {lines:?}"
+    );
 
     cleanup!(config);
     let _ = fs::remove_dir_all(&dir);
@@ -294,13 +307,17 @@ fn config_imports_run_bashrc_style_exports() {
 
 #[test]
 fn runtime_alias_define_list_remove() {
-    let (out, code) = run_shell("alias ll='echo listed'\nll\nalias\nunalias ll\nunalias nosuch\ntrue\n");
+    let (out, code) =
+        run_shell("alias ll='echo listed'\nll\nalias\nunalias ll\nunalias nosuch\ntrue\n");
     assert_eq!(code, 0);
     let lines = visible_lines(&out);
     assert!(lines.contains(&"listed".to_string()));
     assert!(lines.iter().any(|l| l.contains("ll='echo listed'")));
     // unalias of an unknown name is an error -> [1] status marker.
-    assert!(plain_text(&out).contains("[1]"), "expected [1] after bad unalias");
+    assert!(
+        plain_text(&out).contains("[1]"),
+        "expected [1] after bad unalias"
+    );
 }
 
 #[test]
@@ -315,7 +332,10 @@ fn touch_updates_modification_time_of_existing_file() {
     assert_eq!(code, 0);
 
     let after = fs::metadata(&f).unwrap().mtime();
-    assert!(after > before, "touch must bump mtime ({before} -> {after})");
+    assert!(
+        after > before,
+        "touch must bump mtime ({before} -> {after})"
+    );
     cleanup!(f);
 }
 
@@ -326,7 +346,10 @@ fn prompt_template_from_config_is_used() {
 
     let (out, code) = run_shell_with("pwd\nexit\n", &[("SIBSH_CONFIG", config.as_str())]);
     assert_eq!(code, 0);
-    assert!(plain_text(&out).contains("sh> "), "custom prompt expected in: {out}");
+    assert!(
+        plain_text(&out).contains("sh> "),
+        "custom prompt expected in: {out}"
+    );
     cleanup!(config);
 }
 
@@ -347,7 +370,10 @@ fn echo_n_suppresses_trailing_newline() {
     let (out, code) = run_shell("echo -n hello\necho done\n");
     assert_eq!(code, 0);
     // Without -n, `hello` and the next prompt would be on separate lines.
-    assert!(plain_text(&out).contains("hellouser"), "no-newline output joins next prompt: {out}");
+    assert!(
+        plain_text(&out).contains("hellouser"),
+        "no-newline output joins next prompt: {out}"
+    );
 }
 
 #[test]
@@ -357,7 +383,8 @@ fn cd_dash_toggles_between_directories() {
     fs::create_dir_all(&dir).unwrap();
 
     let (_, code) = run_shell(&format!(
-        "cd {}\npwd > /dev/null\ncd -\ncd -\npwd\n", dir.display()
+        "cd {}\npwd > /dev/null\ncd -\ncd -\npwd\n",
+        dir.display()
     ));
     assert_eq!(code, 0);
     // After two toggles we are back in the temp directory.
@@ -370,16 +397,32 @@ fn type_reports_builtins_and_externals() {
     let (out, code) = run_shell("type echo\ntype ls\ntype nosuchcmd_zz\ntrue\n");
     assert_eq!(code, 0);
     let lines = visible_lines(&out);
-    assert!(lines.iter().any(|l| l.contains("builtin") && l.contains("echo")), "{lines:?}");
-    assert!(lines.iter().any(|l| l.contains("ls") && !l.contains("builtin")), "{lines:?}");
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("builtin") && l.contains("echo")),
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("ls") && !l.contains("builtin")),
+        "{lines:?}"
+    );
 }
 
 #[test]
 fn which_prints_path_or_fails_cleanly() {
     let (out, code) = run_shell("which ls\nwhich nosuchcmd_zz\ntrue\n");
     assert_eq!(code, 0);
-    assert!(visible_lines(&out).iter().any(|l| l.ends_with("/ls")), "{out}");
-    assert!(plain_text(&out).contains("[1]"), "unknown command must set status 1");
+    assert!(
+        visible_lines(&out).iter().any(|l| l.ends_with("/ls")),
+        "{out}"
+    );
+    assert!(
+        plain_text(&out).contains("[1]"),
+        "unknown command must set status 1"
+    );
 }
 
 #[test]
@@ -391,9 +434,8 @@ fn env_lists_exported_variable() {
 
 #[test]
 fn unset_removes_variable() {
-    let (out, code) = run_shell(
-        "export SIBSH_UNSET_ME=x\nunset SIBSH_UNSET_ME\necho [$SIBSH_UNSET_ME]\n",
-    );
+    let (out, code) =
+        run_shell("export SIBSH_UNSET_ME=x\nunset SIBSH_UNSET_ME\necho [$SIBSH_UNSET_ME]\n");
     assert_eq!(code, 0);
     assert!(visible_lines(&out).contains(&"[]".to_string()), "{out}");
 }
@@ -403,7 +445,10 @@ fn help_lists_available_commands() {
     let (out, code) = run_shell("help\n");
     assert_eq!(code, 0);
     for cmd in ["cd", "echo", "export", "history", "alias"] {
-        assert!(plain_text(&out).contains(cmd), "help must mention {cmd}: {out}");
+        assert!(
+            plain_text(&out).contains(cmd),
+            "help must mention {cmd}: {out}"
+        );
     }
 }
 
@@ -474,9 +519,7 @@ fn quoted_empty_string_is_a_real_argument() {
 #[test]
 fn history_records_every_command() {
     let f = tmpfile("hist.txt");
-    run_shell(&format!(
-        "echo one\necho two\nhistory > {f}\n"
-    ));
+    run_shell(&format!("echo one\necho two\nhistory > {f}\n"));
     let contents = fs::read_to_string(&f).unwrap();
     assert!(contents.contains("echo one"), "{contents}");
     assert!(contents.contains("echo two"), "{contents}");

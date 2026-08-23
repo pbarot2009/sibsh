@@ -61,8 +61,7 @@ impl ShellState {
     pub fn run_repl(&mut self) -> i32 {
         while self.running {
             // 1. Render Prompt
-            let prompt =
-                Prompt::render_with(self.config.prompt.as_deref(), self.last_status);
+            let prompt = Prompt::render_with(self.config.prompt.as_deref(), self.last_status);
             print!("{prompt}");
             if let Err(e) = io::stdout().flush() {
                 eprintln!("sibsh: failed to flush stdout: {e}");

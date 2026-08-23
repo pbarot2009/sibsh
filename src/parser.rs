@@ -51,11 +51,7 @@ impl Parser {
             match state {
                 ParseState::Normal => match ch {
                     ' ' | '\t' | '\r' | '\n' => {
-                        Self::flush_token(
-                            &mut command,
-                            &mut current_token,
-                            &mut pending_redirect,
-                        );
+                        Self::flush_token(&mut command, &mut current_token, &mut pending_redirect);
                     }
                     '\'' => {
                         state = ParseState::InSingleQuote;
@@ -217,7 +213,7 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    use super::{RedirectMode, Parser};
+    use super::{Parser, RedirectMode};
     use crate::error::ShellError;
     use std::env;
 
@@ -419,14 +415,20 @@ mod tests {
     fn multiple_output_redirects_keep_order_last_wins_semantics() {
         let cmd = parse("echo a > f1 >> f2");
         assert_eq!(cmd.redirects.len(), 2);
-        assert_eq!(cmd.redirects[0], crate::parser::Redirection {
-            mode: RedirectMode::OutputTrunc,
-            path: "f1".into(),
-        });
-        assert_eq!(cmd.redirects[1], crate::parser::Redirection {
-            mode: RedirectMode::OutputAppend,
-            path: "f2".into(),
-        });
+        assert_eq!(
+            cmd.redirects[0],
+            crate::parser::Redirection {
+                mode: RedirectMode::OutputTrunc,
+                path: "f1".into(),
+            }
+        );
+        assert_eq!(
+            cmd.redirects[1],
+            crate::parser::Redirection {
+                mode: RedirectMode::OutputAppend,
+                path: "f2".into(),
+            }
+        );
     }
 
     #[test]

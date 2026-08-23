@@ -1,5 +1,5 @@
 use crate::error::{ShellError, ShellResult};
-use crate::parser::{Redirection, RedirectMode};
+use crate::parser::{RedirectMode, Redirection};
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::process::{Command, Stdio};
@@ -53,20 +53,22 @@ impl RedirectHandles {
 
     fn stdin_stdio(&self) -> ShellResult<Stdio> {
         match &self.stdin {
-            Some(file) => Ok(Stdio::from(
-                file.try_clone()
-                    .map_err(|e| ShellError::Io(io::Error::new(e.kind(), e.to_string())))?,
-            )),
+            Some(file) => {
+                Ok(Stdio::from(file.try_clone().map_err(|e| {
+                    ShellError::Io(io::Error::new(e.kind(), e.to_string()))
+                })?))
+            }
             None => Ok(Stdio::inherit()),
         }
     }
 
     fn stdout_stdio(&self) -> ShellResult<Stdio> {
         match &self.stdout {
-            Some(file) => Ok(Stdio::from(
-                file.try_clone()
-                    .map_err(|e| ShellError::Io(io::Error::new(e.kind(), e.to_string())))?,
-            )),
+            Some(file) => {
+                Ok(Stdio::from(file.try_clone().map_err(|e| {
+                    ShellError::Io(io::Error::new(e.kind(), e.to_string()))
+                })?))
+            }
             None => Ok(Stdio::inherit()),
         }
     }
@@ -77,11 +79,7 @@ pub struct Executor;
 impl Executor {
     /// Spawns an external command with any redirected stdio applied, waits
     /// for completion, and returns the exit status code.
-    pub fn execute(
-        cmd: &str,
-        args: &[String],
-        redirects: &RedirectHandles,
-    ) -> ShellResult<i32> {
+    pub fn execute(cmd: &str, args: &[String], redirects: &RedirectHandles) -> ShellResult<i32> {
         let mut command = Command::new(cmd);
         command.args(args);
 

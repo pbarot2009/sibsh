@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- `echo_n_suppresses_trailing_newline` integration test depended on the host
-  username through the prompt text and failed on GitHub Actions runners. The
-  test now pins `USER` for the spawned shell so it passes identically on
-  Linux and macOS.
-
 ### Planned
 - **Phase 1.3** — Pipelines (`cmd1 | cmd2 | cmd3`) with concurrent stage execution.
   See [CHECKLISTS.md → Phase 1.3](CHECKLISTS.md#13--pipelines-next-phase-planned-for-v020).
@@ -22,6 +16,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   See [CHECKLISTS.md → Phase 1.5](CHECKLISTS.md#15--filename-expansion-globbing--tilde-expansion-planned-v030).
 - **Phase 2.0** — Job control, signal handling (`SIGINT`, `SIGTSTP`),
   persistent history file.
+
+## [0.1.45] - 2026-08-23
+
+### Added
+
+- Two-line, segment-based prompt in the starship / oh-my-posh style:
+  `╭─ [sibsh] ~/code/project on  main [⇡2 ⇣1 !3 ?1] via  rs [3.42s ]`
+  with a `╰─❯` input line below.
+- Git segment: current branch plus dirty-state flags (`!N` modified,
+  `?N` untracked, `⇡N` ahead, `⇣N` behind) from one
+  `git status --porcelain -b` call per prompt. Hidden outside repositories;
+  disable entirely with `git_status = false`.
+- Execution timer: commands taking longer than 2 seconds show `[3.42s 󰅐]`.
+- Exit-code badge on failure: `[127 ✘]`, and the pointer switches from green
+  `❯` to red `❭`.
+- SSH session detection: `user@host` renders only when `SSH_TTY` or
+  `SSH_CONNECTION` is set.
+- Root mode (UID 0): bold gold `#` marker and pointer, runtime segments
+  removed.
+- Deep-path truncation: paths deeper than 3 levels contract leading
+  segments to `…/`; `$HOME` still displays as `~`.
+- Language detection by project files: Cargo.toml → rs, go.mod / *.go →
+  go, CMakeLists.txt / C/C++ sources → c.
+- Fixed ANSI-256 palette (frame gray, brand violet, directory blue, git
+  pink, flag orange, language green, timer sand, error red, pointer green).
+- `icons = "ascii"` config key switches every glyph to its plain ASCII
+  fallback (`+-` frame, `>` pointer, `git:` prefix, `^`/`v` sync flags).
+- `{branch}` placeholder for custom prompt templates.
+
+### Changed
+
+- The line editor now repaints multi-line prompts correctly: redraws move
+  up over every prompt line (and any completion candidate list), clear to
+  end of screen, then rewrite — no stacked or duplicated frames.
+- Test suite grew to 131 tests (84 unit + 47 integration) covering every
+  prompt state; tests pin environment identity so they pass identically as
+  root or non-root, local or CI.
 
 ## [0.1.4] - 2026-08-23
 

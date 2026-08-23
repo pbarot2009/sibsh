@@ -211,16 +211,32 @@ fn read_line_plain(prompt: &str) -> io::Result<Option<String>> {
     }
 }
 
-fn redraw(out: &mut impl Write, prompt: &str, chars: &[char], cursor: usize) -> io::Result<()> {
+/// Repaints the prompt plus the edited line from a clean state.
+///
+/// The prompt may span multiple screen lines (two-line prompt), so the
+/// cursor first moves up over every prompt line *and* over any candidate
+/// list printed below, then `\x1b[J` clears from the cursor to the end of
+/// the screen before everything is rewritten.
+fn redraw(
+    out: &mut impl Write,
+    prompt: &str,
+    chars: &[char],
+    cursor: usize,
+    extra_lines_above: usize,
+) -> io::Result<()> {
     let line: String = chars.iter().collect();
-    write!(out, "\r\x1b[K{prompt}{line}")?;
+    let up = prompt.matches('\n').count() + extra_lines_above;
+    if up > 0 {
+        write!(out, "\x1b[{up}A")?;
+    }
+    write!(out, "\r\x1b[J{prompt}{line}")?;
     if cursor < chars.len() {
         write!(out, "\x1b[{}D", chars.len() - cursor)?;
     }
     out.flush()
 }
 
-fn print_candidates(out: &mut impl Write, candidates: &[String]) -> io::Result<()> {
+fn print_candidates(out: &mut impl Write, candidates: &[String]) -> io::Result<usize> {
     const WIDTH: usize = 80;
     let longest = candidates.iter().map(String::len).max().unwrap_or(0);
     let columns = (WIDTH / (longest + 2)).max(1);
@@ -231,7 +247,10 @@ fn print_candidates(out: &mut impl Write, candidates: &[String]) -> io::Result<(
         }
         write!(out, "{candidate:<longest$}  ")?;
     }
-    writeln!(out)
+    writeln!(out)?;
+    // Rows written plus the trailing newline: exactly how far the cursor
+    // moved down, so the caller knows how far to move it back up.
+    Ok(candidates.len().div_ceil(columns) + 1)
 }
 
 /// Raw-mode line editor loop.
@@ -284,14 +303,14 @@ fn read_line_raw(
                 }
                 if cursor < chars.len() {
                     chars.remove(cursor);
-                    redraw(&mut out, prompt, &chars, cursor)?;
+                    redraw(&mut out, prompt, &chars, cursor, 0)?;
                 }
             }
             BACKSPACE | 0x08 => {
                 if cursor > 0 {
                     cursor -= 1;
                     chars.remove(cursor);
-                    redraw(&mut out, prompt, &chars, cursor)?;
+                    redraw(&mut out, prompt, &chars, cursor, 0)?;
                 }
                 last_was_tab = false;
             }
@@ -304,23 +323,23 @@ fn read_line_raw(
                         chars.insert(cursor, ch);
                         cursor += 1;
                     }
-                    redraw(&mut out, prompt, &chars, cursor)?;
+                    redraw(&mut out, prompt, &chars, cursor, 0)?;
                     last_was_tab = false;
                 } else if last_was_tab && completion.candidates.len() > 1 {
-                    print_candidates(&mut out, &completion.candidates)?;
-                    redraw(&mut out, prompt, &chars, cursor)?;
+                    let lines = print_candidates(&mut out, &completion.candidates)?;
+                    redraw(&mut out, prompt, &chars, cursor, lines)?;
                 } else {
                     last_was_tab = true;
                 }
             }
             CTRL_A => {
                 cursor = 0;
-                redraw(&mut out, prompt, &chars, cursor)?;
+                redraw(&mut out, prompt, &chars, cursor, 0)?;
                 last_was_tab = false;
             }
             CTRL_E => {
                 cursor = chars.len();
-                redraw(&mut out, prompt, &chars, cursor)?;
+                redraw(&mut out, prompt, &chars, cursor, 0)?;
                 last_was_tab = false;
             }
             0x1b => {
@@ -341,7 +360,7 @@ fn read_line_raw(
                     chars.insert(cursor, ch);
                     cursor += 1;
                 }
-                redraw(&mut out, prompt, &chars, cursor)?;
+                redraw(&mut out, prompt, &chars, cursor, 0)?;
                 last_was_tab = false;
             }
         }
@@ -401,35 +420,35 @@ fn handle_escape(
             if let Some(line) = browse(up) {
                 *chars = line;
                 *cursor = chars.len();
-                redraw(out, prompt, chars, *cursor)?;
+                redraw(out, prompt, chars, *cursor, 0)?;
             }
         }
         b'C' => {
             if *cursor < chars.len() {
                 *cursor += 1;
-                redraw(out, prompt, chars, *cursor)?;
+                redraw(out, prompt, chars, *cursor, 0)?;
             }
         }
         b'D' => {
             if *cursor > 0 {
                 *cursor -= 1;
-                redraw(out, prompt, chars, *cursor)?;
+                redraw(out, prompt, chars, *cursor, 0)?;
             }
         }
         b'H' => {
             *cursor = 0;
-            redraw(out, prompt, chars, *cursor)?;
+            redraw(out, prompt, chars, *cursor, 0)?;
         }
         b'F' => {
             *cursor = chars.len();
-            redraw(out, prompt, chars, *cursor)?;
+            redraw(out, prompt, chars, *cursor, 0)?;
         }
         b'3' => {
             // Delete key: sequence ends with `~`.
             let _ = stdin.read(byte)?;
             if *cursor < chars.len() {
                 chars.remove(*cursor);
-                redraw(out, prompt, chars, *cursor)?;
+                redraw(out, prompt, chars, *cursor, 0)?;
             }
         }
         _ => {}

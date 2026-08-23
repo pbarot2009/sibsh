@@ -10,7 +10,7 @@ use std::fs;
 use std::path::PathBuf;
 
 /// Parsed shell configuration.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Prompt template. Placeholders: `{user}`, `{host}`, `{cwd}`, `{status}`.
     pub prompt: Option<String>,
@@ -20,6 +20,25 @@ pub struct Config {
     pub aliases: Vec<(String, String)>,
     /// Shell files (bashrc/zshrc style) executed at startup.
     pub imports: Vec<String>,
+    /// `"ascii"` switches the prompt to plain fallback glyphs; any other
+    /// value (or unset) uses Nerd Font / Unicode symbols.
+    pub icons: Option<String>,
+    /// Set `false` to skip the git branch/status segment entirely (also
+    /// skips the per-prompt `git status` subprocess).
+    pub git_status: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            prompt: None,
+            history_limit: None,
+            aliases: Vec::new(),
+            imports: Vec::new(),
+            icons: None,
+            git_status: true,
+        }
+    }
 }
 
 /// Flat key/value map with section prefixes, e.g. `aliases.ll` -> `"ls -la"`.
@@ -48,10 +67,25 @@ impl Config {
 # prompt: custom prompt text. Available placeholders:
 #   {user}   your username          {host}  machine hostname
 #   {cwd}    current directory      {status} last exit code (0 on success)
-# Default (when this line is removed):
-#   "{user}@{host}:{cwd} ❯ " with colors and a red [status] on failure
+# Default (when this line is removed): a two-line segment prompt with
+#   [sibsh], path, git branch/status, language, timer, and exit code.
+#   Placeholders: {user} {host} {cwd} {status} {branch}
 # ------------------------------------------------------------------
 #prompt = "{user}@{host}:{cwd} ❯ "
+
+# ------------------------------------------------------------------
+# icons: glyph set for the prompt. "ascii" uses plain fallbacks
+#   (">", "git:", "^", "v") for terminals without a Nerd Font.
+#   Remove the line (or any other value) for the full symbol set.
+# ------------------------------------------------------------------
+#icons = "ascii"
+
+# ------------------------------------------------------------------
+# git_status: set false to hide the `on  branch [flags]` segment and
+# skip the git subprocess run at every prompt. Useful in very large
+# repositories or non-git directories.
+# ------------------------------------------------------------------
+#git_status = true
 
 # ------------------------------------------------------------------
 # history_limit: maximum number of commands kept in memory this session.
@@ -157,6 +191,12 @@ gs = "git status"
         }
         if let Some(Value::Array(items)) = table.get("imports") {
             config.imports.clone_from(items);
+        }
+        if let Some(Value::Str(s)) = table.get("icons") {
+            config.icons = Some(s.clone());
+        }
+        if let Some(Value::Bool(b)) = table.get("git_status") {
+            config.git_status = *b;
         }
         for (key, value) in &table {
             let Some(name) = key.strip_prefix("aliases.") else {
@@ -468,6 +508,20 @@ mod tests {
         // makes the line invalid. This is a documented limitation of the subset.
         let err = Config::from_str("prompt = \"a\\\"b\"\n").unwrap_err();
         assert!(err.contains("line 1"), "got: {err}");
+    }
+
+    #[test]
+    fn icons_and_git_status_keys_parse() {
+        let config = Config::from_str("icons = \"ascii\"\ngit_status = false\n").expect("valid");
+        assert_eq!(config.icons.as_deref(), Some("ascii"));
+        assert!(!config.git_status);
+    }
+
+    #[test]
+    fn defaults_use_nerd_icons_and_git_on() {
+        let config = Config::default();
+        assert_eq!(config.icons, None);
+        assert!(config.git_status);
     }
 
     #[test]

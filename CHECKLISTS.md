@@ -257,6 +257,36 @@ not a production shell yet. Still zero external dependencies.
       or synthetic one (fixes the intermittent CI failure).
 - [x] `cargo fmt --all` applied.
 
+#### Two-line segment prompt redesign in v0.1.45 (done)
+
+Layout: `╭─ [sibsh] user@host ~/code/project on  main [⇡2 ⇣1 !3 ?1] via  rs
+[3.42s ] [127 ✘]` with input line `╰─❯`. Segments render only when relevant,
+starship / oh-my-posh style.
+
+- [x] Frame connectors `╭─` / `╰─` with ASCII `+-` fallback (`icons = "ascii"`).
+- [x] `[sibsh]` brand badge, violet ANSI 256 color 141.
+- [x] `user@host` only when `SSH_TTY` or `SSH_CONNECTION` is set.
+- [x] Path display: `$HOME` -> `~`, deeper than 3 levels contracts leading
+      segments to `.../` style truncation with the ellipsis glyph.
+- [x] Git segment from one `git status --porcelain -b` call per prompt:
+      branch name plus `[⇡2 ⇣1 !3 ?1]` flags for ahead/behind/modified/
+      untracked; hidden outside repositories; `git_status = false` disables
+      it entirely.
+- [x] Language detection: Cargo.toml -> rs, go.mod / *.go -> go,
+      CMakeLists.txt / C/C++ sources -> c.
+- [x] Execution timer above 2 seconds: `[3.42s clock-glyph]`.
+- [x] Exit-code badge on failure only: `[127 ✘]`; pointer switches green
+      `❯` -> red `❭`.
+- [x] Root mode (UID 0, detected via `/proc/self/status`, no libc): gold `#`
+      marker and pointer, runtime segments dropped; test override via
+      `SIBSH_FORCE_NON_ROOT` keeps suites deterministic on root machines.
+- [x] Fixed ANSI-256 palette module; multi-line-aware redraw in the line
+      editor (move up over prompt lines and candidate lists, clear to end
+      of screen, rewrite) — no stacked frames while typing.
+- [x] Custom templates still supported and gain `{branch}` placeholder.
+- [x] Verified all states through a real PTY: clean tree, dirty + untracked,
+      failure badge, timer after `sleep 2.2`, ascii mode, root mode.
+
 #### Testing and verification for the additions (done)
 
 - [x] 60 unit tests total: parser 26, config parser 22, completion 12

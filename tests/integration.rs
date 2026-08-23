@@ -6,12 +6,17 @@ use std::fs;
 use std::process::{Command, Stdio};
 
 fn run_shell(script: &str) -> (String, i32) {
+    run_shell_with(script, &[])
+}
+
+fn run_shell_with(script: &str, extra_env: &[(&str, &str)]) -> (String, i32) {
     use std::io::Write;
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_sibsh"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .envs(extra_env.iter().copied())
         .spawn()
         .expect("failed to spawn sibsh");
 
@@ -240,4 +245,97 @@ fn regression_phase_1_1_behavior_intact() {
     let (out, code) = run_shell("echo plain\n");
     assert_eq!(code, 0);
     assert!(visible_lines(&out).contains(&"plain".to_string()));
+}
+
+#[test]
+fn config_aliases_from_toml_expand() {
+    let config = tmpfile("cfg.toml");
+    fs::write(&config, "[aliases]\nhello = \"echo world\"\n").unwrap();
+
+    let (out, code) = run_shell_with("hello\nalias\nunalias hello\nhello\ntrue\n", &[
+        ("SIBSH_CONFIG", config.as_str()),
+    ]);
+    assert_eq!(code, 0);
+    let lines = visible_lines(&out);
+    assert!(lines.contains(&"world".to_string()), "alias must expand: {lines:?}");
+    assert!(lines.iter().any(|l| l.contains("hello='echo world'")));
+    // After unalias, `hello` is no longer a command.
+    let after = lines.iter().position(|l| l == "world").unwrap_or(0);
+    assert!(!lines[after + 1..].contains(&"world".to_string()), "unalias must remove it: {lines:?}");
+    cleanup!(config);
+}
+
+#[test]
+fn config_imports_run_bashrc_style_exports() {
+    let dir = std::env::temp_dir().join("sibsh_imports_test");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let rc = dir.join("rc.sh");
+    fs::write(
+        &rc,
+        "# a comment\nexport SIBSH_IMPORTED=from-import\ncase $SHELL in esac # unsupported syntax, skipped\necho imported-ran\n",
+    )
+    .unwrap();
+    let config = tmpfile("cfg_imp.toml");
+    fs::write(&config, format!("imports = [\"{}\"]\n", rc.display())).unwrap();
+
+    let (out, code) = run_shell_with(
+        "echo value=$SIBSH_IMPORTED\nexit 0\n",
+        &[("SIBSH_CONFIG", config.as_str())],
+    );
+    assert_eq!(code, 0);
+    let lines = visible_lines(&out);
+    assert!(lines.contains(&"imported-ran".to_string()), "import lines must run: {lines:?}");
+    assert!(lines.contains(&"value=from-import".to_string()), "export from import: {lines:?}");
+
+    cleanup!(config);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn runtime_alias_define_list_remove() {
+    let (out, code) = run_shell("alias ll='echo listed'\nll\nalias\nunalias ll\nunalias nosuch\ntrue\n");
+    assert_eq!(code, 0);
+    let lines = visible_lines(&out);
+    assert!(lines.contains(&"listed".to_string()));
+    assert!(lines.iter().any(|l| l.contains("ll='echo listed'")));
+    // unalias of an unknown name is an error -> [1] status marker.
+    assert!(plain_text(&out).contains("[1]"), "expected [1] after bad unalias");
+}
+
+#[test]
+fn touch_updates_modification_time_of_existing_file() {
+    use std::os::unix::fs::MetadataExt;
+    let f = tmpfile("mtime.txt");
+    fs::write(&f, "x").unwrap();
+    let before = fs::metadata(&f).unwrap().mtime();
+
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let (_, code) = run_shell(&format!("touch {f}\n"));
+    assert_eq!(code, 0);
+
+    let after = fs::metadata(&f).unwrap().mtime();
+    assert!(after > before, "touch must bump mtime ({before} -> {after})");
+    cleanup!(f);
+}
+
+#[test]
+fn prompt_template_from_config_is_used() {
+    let config = tmpfile("cfg_prompt.toml");
+    fs::write(&config, "prompt = \"sh> {cwd}\"").unwrap();
+
+    let (out, code) = run_shell_with("pwd\nexit\n", &[("SIBSH_CONFIG", config.as_str())]);
+    assert_eq!(code, 0);
+    assert!(plain_text(&out).contains("sh> "), "custom prompt expected in: {out}");
+    cleanup!(config);
+}
+
+#[test]
+fn missing_config_file_starts_normally() {
+    let (out, code) = run_shell_with(
+        "echo fine\nexit\n",
+        &[("SIBSH_CONFIG", "/nonexistent/sibsh.toml")],
+    );
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"fine".to_string()));
 }

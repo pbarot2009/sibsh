@@ -9,27 +9,15 @@ use std::path::{Path, PathBuf};
 pub struct Builtins;
 
 impl Builtins {
+    /// All builtin names, used by `help`, completion, and `is_builtin`.
+    pub const NAMES: [&str; 19] = [
+        "cd", "pwd", "echo", "exit", "help", "clear", "type", "which", "env",
+        "export", "setenv", "unset", "unsetenv", "history", "touch", "cat",
+        "true", "false", "alias",
+    ];
+
     pub fn is_builtin(cmd: &str) -> bool {
-        matches!(
-            cmd,
-            "cd" | "pwd"
-                | "echo"
-                | "exit"
-                | "help"
-                | "clear"
-                | "type"
-                | "which"
-                | "env"
-                | "export"
-                | "setenv"
-                | "unset"
-                | "unsetenv"
-                | "history"
-                | "touch"
-                | "cat"
-                | "true"
-                | "false"
-        )
+        Self::NAMES.contains(&cmd) || cmd == "unalias"
     }
 
     pub fn execute(
@@ -68,11 +56,59 @@ impl Builtins {
             "cat" => Self::builtin_cat(redirects.stdin.as_ref(), &mut out, cmd_args),
             "true" => Ok(0),
             "false" => Ok(1),
+            "alias" | "unalias" => Ok(Self::builtin_alias(state, cmd, cmd_args, &mut out)),
             _ => Err(ShellError::BuiltinError(format!("unknown builtin: {cmd}"))),
         };
 
         out.flush()?;
         result
+    }
+
+    /// `alias` lists all aliases; `alias name=value` defines one at runtime;
+    /// `unalias name` removes one.
+    fn builtin_alias(
+        state: &mut ShellState,
+        cmd: &str,
+        args: &[String],
+        out: &mut dyn Write,
+    ) -> i32 {
+        if cmd == "unalias" {
+            if args.is_empty() {
+                eprintln!("sibsh: unalias: missing operand");
+                return 1;
+            }
+            for name in args {
+                if !state.aliases.iter().any(|(key, _)| key == name) {
+                    eprintln!("sibsh: unalias: {name}: not found");
+                    return 1;
+                }
+                state.aliases.retain(|(key, _)| key != name);
+            }
+            return 0;
+        }
+
+        if args.is_empty() {
+            for (name, value) in &state.aliases {
+                let _ = writeln!(out, "{name}='{value}'");
+            }
+            return 0;
+        }
+
+        let mut status = 0;
+        for arg in args {
+            match arg.split_once('=') {
+                Some((name, value)) if !name.is_empty() => {
+                    let value = value.trim_matches('\'').trim_matches('"');
+                    state.aliases.retain(|(key, _)| key != name);
+                    state.aliases.push((name.to_string(), value.to_string()));
+                }
+                _ => {
+                    eprintln!("sibsh: alias: `{arg}`: not a valid definition (use name=value)");
+                    status = 1;
+                }
+            }
+        }
+        status
     }
 
     fn builtin_cd(state: &mut ShellState, args: &[String], out: &mut dyn Write) -> i32 {
@@ -145,9 +181,11 @@ impl Builtins {
     }
 
     fn builtin_help(out: &mut dyn Write) -> i32 {
-        let _ = writeln!(out, "\x1b[1msibsh - Something Is Better Shell (Phase 1.2)\x1b[0m");
+        let _ = writeln!(out, "\x1b[1msibsh - Something Is Better Shell\x1b[0m");
         let _ = writeln!(out, "Type program names and arguments, then hit enter.");
-        let _ = writeln!(out, "Redirection: cmd > file (create), cmd >> file (append), cmd < file (stdin)\n");
+        let _ = writeln!(out, "Tab completes commands and file paths; Up/Down browse history.");
+        let _ = writeln!(out, "Redirection: cmd > file (create), cmd >> file (append), cmd < file (stdin)");
+        let _ = writeln!(out, "Config: ~/.sibsh/sibsh.toml supports prompt, aliases, and bashrc/zshrc imports\n");
         let _ = writeln!(out, "Built-in Commands:");
         let _ = writeln!(out, "  cd <dir>            Change working directory (supports ~, -)");
         let _ = writeln!(out, "  pwd                 Print current working directory");
@@ -157,11 +195,13 @@ impl Builtins {
         let _ = writeln!(out, "  type <cmd>          Describe how command would be interpreted");
         let _ = writeln!(out, "  which <cmd>         Locate a program in $PATH");
         let _ = writeln!(out, "  env                 Display all environment variables");
-        let _ = writeln!(out, "  export KEY=VAL      Set an environment variable");
+        let _ = writeln!(out, "  export KEY=VAL      Set an environment variable (export KEY marks it empty)");
         let _ = writeln!(out, "  unset KEY           Remove an environment variable");
         let _ = writeln!(out, "  history             Show command history");
-        let _ = writeln!(out, "  touch <file...>     Create or update file timestamp");
+        let _ = writeln!(out, "  touch <file...>     Create files or update their modification time");
         let _ = writeln!(out, "  cat <file...>       Concatenate and print file contents");
+        let _ = writeln!(out, "  alias               List aliases; alias name='value' defines one");
+        let _ = writeln!(out, "  unalias <name>      Remove an alias");
         let _ = writeln!(out, "  true / false        Return exit status 0 or 1");
         let _ = writeln!(out, "  help                Show this help message");
         0
@@ -267,12 +307,16 @@ impl Builtins {
         }
 
         let mut status = 0;
+        let now = std::time::SystemTime::now();
         for path_str in args {
+            // Create the file when missing, then stamp it with the current
+            // time like real touch does.
             let res = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(false)
-                .open(path_str);
+                .open(path_str)
+                .and_then(|file| file.set_modified(now));
 
             if let Err(e) = res {
                 eprintln!("sibsh: touch: cannot touch '{path_str}': {e}");

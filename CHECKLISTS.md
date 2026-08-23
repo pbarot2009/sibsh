@@ -245,6 +245,18 @@ not a production shell yet. Still zero external dependencies.
 | 13 | `touch` bumps mtime of existing file | verified by integration test |
 | 14 | Piped stdin (non-TTY) | plain reading fallback, no hang |
 
+#### Fixes in v0.1.4 (done)
+
+- [x] Duplicate prompt in interactive mode: REPL and line reader both painted
+      it. Prompt painting now belongs entirely to `completion::read_line`
+      (zsh ZLE / fish model); verified single-prompt redraws through a PTY.
+- [x] Non-terminal fallback prints the prompt once, so piped scripts keep
+      their prompt output and all integration tests stay valid.
+- [x] Completion unit tests no longer depend on the machine's real `$PATH`:
+      `complete_in()` accepts an explicit directory list; tests pass an empty
+      or synthetic one (fixes the intermittent CI failure).
+- [x] `cargo fmt --all` applied.
+
 #### Testing and verification for the additions (done)
 
 - [x] 60 unit tests total: parser 26, config parser 22, completion 12

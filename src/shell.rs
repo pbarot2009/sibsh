@@ -58,15 +58,16 @@ impl ShellState {
     }
 
     /// Primary interactive REPL loop.
+    ///
+    /// Prompt painting belongs entirely to the line reader (`completion::read_line`),
+    /// matching how zsh's ZLE and fish work: the editor draws the prompt and the
+    /// buffer together so redraws never duplicate the prompt or lose column 0.
     pub fn run_repl(&mut self) -> i32 {
         while self.running {
-            // 1. Render Prompt
+            // 1. Render the prompt text. Like zsh's ZLE and fish, the line
+            //    reader is the only place that paints it on screen: printing
+            //    here as well would show two prompts on one line.
             let prompt = Prompt::render_with(self.config.prompt.as_deref(), self.last_status);
-            print!("{prompt}");
-            if let Err(e) = io::stdout().flush() {
-                eprintln!("sibsh: failed to flush stdout: {e}");
-                break;
-            }
 
             // 2. Read user input with tab completion and history navigation.
             let line = match completion::read_line(&prompt, &self.history, &self.aliases) {

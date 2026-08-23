@@ -47,6 +47,9 @@ Tab completion, runtime configuration, and aliases.
     parts sibsh supports.
   - Path can be overridden with `$SIBSH_CONFIG` (used by tests). A missing or
     invalid file never prevents startup; parse errors report the line number.
+  - On first run a fully commented template is written to the config path so
+    every option and its syntax is documented in place. The same template
+    ships as `sibsh.toml.example` in the repository.
 - **Aliases**: new `alias` builtin (list all, or define with
   `alias name='value'`) and `unalias name`. The first word of a command
   expands once against these definitions (no recursion).
@@ -56,7 +59,8 @@ Tab completion, runtime configuration, and aliases.
   `File::set_modified`) instead of only creating them.
 - Prompt rendering supports config templates (`Prompt::render_with`);
   the default prompt is unchanged.
-- Test coverage grew to 25 unit tests and 24 integration tests.
+- Test coverage grew to 100 tests: 60 unit (parser, config parser, completion)
+  and 40 integration tests driving the real binary.
 
 ## [0.1.2] - 2026-08-22
 

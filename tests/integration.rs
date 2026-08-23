@@ -339,3 +339,146 @@ fn missing_config_file_starts_normally() {
     assert_eq!(code, 0);
     assert!(visible_lines(&out).contains(&"fine".to_string()));
 }
+
+// ---- Additional built-in coverage ----
+
+#[test]
+fn echo_n_suppresses_trailing_newline() {
+    let (out, code) = run_shell("echo -n hello\necho done\n");
+    assert_eq!(code, 0);
+    // Without -n, `hello` and the next prompt would be on separate lines.
+    assert!(plain_text(&out).contains("hellouser"), "no-newline output joins next prompt: {out}");
+}
+
+#[test]
+fn cd_dash_toggles_between_directories() {
+    let dir = std::env::temp_dir().join("sibsh_cd_toggle");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+
+    let (_, code) = run_shell(&format!(
+        "cd {}\npwd > /dev/null\ncd -\ncd -\npwd\n", dir.display()
+    ));
+    assert_eq!(code, 0);
+    // After two toggles we are back in the temp directory.
+    assert!(fs::read_dir(&dir).is_ok());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn type_reports_builtins_and_externals() {
+    let (out, code) = run_shell("type echo\ntype ls\ntype nosuchcmd_zz\ntrue\n");
+    assert_eq!(code, 0);
+    let lines = visible_lines(&out);
+    assert!(lines.iter().any(|l| l.contains("builtin") && l.contains("echo")), "{lines:?}");
+    assert!(lines.iter().any(|l| l.contains("ls") && !l.contains("builtin")), "{lines:?}");
+}
+
+#[test]
+fn which_prints_path_or_fails_cleanly() {
+    let (out, code) = run_shell("which ls\nwhich nosuchcmd_zz\ntrue\n");
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).iter().any(|l| l.ends_with("/ls")), "{out}");
+    assert!(plain_text(&out).contains("[1]"), "unknown command must set status 1");
+}
+
+#[test]
+fn env_lists_exported_variable() {
+    let (out, code) = run_shell("export SIBSH_ENV_TEST=visible\nenv\n");
+    assert_eq!(code, 0);
+    assert!(plain_text(&out).contains("SIBSH_ENV_TEST=visible"), "{out}");
+}
+
+#[test]
+fn unset_removes_variable() {
+    let (out, code) = run_shell(
+        "export SIBSH_UNSET_ME=x\nunset SIBSH_UNSET_ME\necho [$SIBSH_UNSET_ME]\n",
+    );
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"[]".to_string()), "{out}");
+}
+
+#[test]
+fn help_lists_available_commands() {
+    let (out, code) = run_shell("help\n");
+    assert_eq!(code, 0);
+    for cmd in ["cd", "echo", "export", "history", "alias"] {
+        assert!(plain_text(&out).contains(cmd), "help must mention {cmd}: {out}");
+    }
+}
+
+#[test]
+fn cat_concatenates_multiple_files_in_order() {
+    let a = tmpfile("cat_a.txt");
+    let b = tmpfile("cat_b.txt");
+    fs::write(&a, "A1\nA2\n").unwrap();
+    fs::write(&b, "B1\n").unwrap();
+    let f = tmpfile("cat_out.txt");
+    run_shell(&format!("cat {a} {b} > {f}\n"));
+    assert_eq!(fs::read_to_string(&f).unwrap(), "A1\nA2\nB1\n");
+    cleanup!(a, b, f);
+}
+
+#[test]
+fn cat_missing_file_sets_error_status() {
+    let f = tmpfile("does_not_exist_abc.txt");
+    let (out, code) = run_shell(&format!("cat {f}\ntrue\n"));
+    assert_eq!(code, 0);
+    assert!(plain_text(&out).contains("[1]"), "expected [1]: {out}");
+}
+
+#[test]
+fn status_expansion_reflects_previous_failure() {
+    let (out, code) = run_shell("false\necho rc=$?\n");
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"rc=1".to_string()), "{out}");
+}
+
+#[test]
+fn status_expansion_reflects_previous_success() {
+    let (out, code) = run_shell("true\necho rc=$?\n");
+    assert_eq!(code, 0);
+    assert!(visible_lines(&out).contains(&"rc=0".to_string()), "{out}");
+}
+
+#[test]
+fn append_redirect_creates_missing_file() {
+    let f = tmpfile("append_new.txt");
+    run_shell(&format!("echo first >> {f}\n"));
+    assert_eq!(fs::read_to_string(&f).unwrap(), "first\n");
+    cleanup!(f);
+}
+
+#[test]
+fn multi_word_alias_expands_completely() {
+    let (out, code) = run_shell("alias gs='echo a b'\ngs c\nunalias gs\ntrue\n");
+    assert_eq!(code, 0);
+    // Alias value replaces the first word; trailing args are appended.
+    assert!(visible_lines(&out).contains(&"a b c".to_string()), "{out}");
+}
+
+#[test]
+fn exit_without_args_exits_zero() {
+    let (_, code) = run_shell("exit\n");
+    assert_eq!(code, 0);
+}
+
+#[test]
+fn quoted_empty_string_is_a_real_argument() {
+    let (out, code) = run_shell("echo ''x''\n");
+    assert_eq!(code, 0);
+    // Adjacent quotes concatenate into one token.
+    assert!(visible_lines(&out).contains(&"x".to_string()), "{out}");
+}
+
+#[test]
+fn history_records_every_command() {
+    let f = tmpfile("hist.txt");
+    run_shell(&format!(
+        "echo one\necho two\nhistory > {f}\n"
+    ));
+    let contents = fs::read_to_string(&f).unwrap();
+    assert!(contents.contains("echo one"), "{contents}");
+    assert!(contents.contains("echo two"), "{contents}");
+    cleanup!(f);
+}

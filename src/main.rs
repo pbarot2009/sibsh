@@ -11,8 +11,10 @@ use shell::ShellState;
 use std::process;
 
 fn main() {
-    // Load ~/.sibsh/sibsh.toml (if present), then run its imports
-    // (bashrc/zshrc style) before the first prompt.
+    // Create a commented template config on first run (no-op if it exists),
+    // then load ~/.sibsh/sibsh.toml and run its imports (bashrc/zshrc style)
+    // before the first prompt.
+    config::Config::ensure_default();
     let config = config::Config::load();
     let mut shell = ShellState::with_config(config);
     shell.run_imports();

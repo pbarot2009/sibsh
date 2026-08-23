@@ -550,4 +550,41 @@ mod tests {
         assert_eq!(common_prefix(&["\u{e9}x".into(), "\u{e9}y".into()]), "\u{e9}");
         assert_eq!(common_prefix(&[]), "");
     }
+
+    #[test]
+    fn common_prefix_single_candidate_is_itself() {
+        assert_eq!(common_prefix(&["only".into()]), "only");
+        assert_eq!(common_prefix(&["same".into(), "same".into()]), "same");
+    }
+
+    #[test]
+    fn ambiguous_prefix_inserts_shared_part_only() {
+        // `his` may match `history` (builtin) plus any PATH binary like
+        // `histgrep`; with just `history` matching, insert is its remainder
+        // plus a trailing space.
+        let c = complete("his", &[]);
+        if c.candidates.len() == 1 {
+            assert_eq!(c.insert, format!("{} ", &c.candidates[0][3..]));
+        } else {
+            for cand in &c.candidates {
+                assert!(cand.starts_with("his"));
+            }
+        }
+    }
+
+    #[test]
+    fn alias_and_builtin_deduplicated() {
+        // Defining an alias named like an existing builtin must not duplicate it.
+        let al = aliases(&[("echo", "echo -n")]);
+        let c = complete("ec", &al);
+        assert_eq!(c.candidates.iter().filter(|n| *n == "echo").count(), 1);
+    }
+
+    #[test]
+    fn tab_separated_token_boundary_completes_as_second_word() {
+        // A tab acts as a word separator, same as a space.
+        let c = complete("echo\tzzzznope", &[]);
+        assert!(c.candidates.is_empty());
+        assert!(c.insert.is_empty());
+    }
 }

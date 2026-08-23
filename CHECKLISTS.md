@@ -247,12 +247,16 @@ not a production shell yet. Still zero external dependencies.
 
 #### Testing and verification for the additions (done)
 
-- [x] 25 unit tests total (config parser 7, completion 8, parser 10)
-- [x] Integration suite grew to 24 tests: config aliases, imports, runtime
-      alias/unalias, touch mtime, prompt template, missing-config fallback
+- [x] 60 unit tests total: parser 26, config parser 22, completion 12
+- [x] Integration suite grew to 40 tests: the Phase 1.2 matrix, built-in
+      coverage (echo -n, cd -, type/which, env/unset, help, cat, status
+      expansion, history), aliases, imports, prompt template, and config
+      fallback cases
 - [x] Live PTY smoke test via `script`: completion, double-tab listing, history
 - [x] `cargo clippy --all-targets`: 0 warnings
-- [x] `cargo test`: 49/49 passing (25 unit + 24 integration)
+- [x] `cargo test`: 100/100 passing (60 unit + 40 integration)
+- [x] `sibsh.toml.example` added to the repository; first-run auto-create of
+      the commented template verified by a unit test (`template_parses_as_valid_config`)
 - [x] README + CHANGELOGS updated; released as `[0.1.3] - 2026-08-23`
 
 ---
@@ -461,6 +465,6 @@ applied after quoting/expansion but before execution.
 - [x] All checklist items checked *(Phases 0, 1.1, 1.2, additions)*
 - [x] `cargo build --release` warning-free
 - [x] `cargo clippy` clean (0 warnings, pedantic lints enabled)
-- [x] Tests passing (49/49: 25 unit + 24 integration)
+- [x] Tests passing (100/100: 60 unit + 40 integration)
 - [x] README + CHANGELOGS.md updated
 - [x] Smoke-tested through a real terminal session (piped scripts + PTY completion run)

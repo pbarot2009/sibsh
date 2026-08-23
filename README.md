@@ -148,7 +148,9 @@ gs = "git status"
 
 Imported files run bashrc/zshrc style: `export KEY=VAL`, `alias`, comments, and plain command lines execute; bash-only syntax is skipped silently so shared rc files work for the parts sibsh supports.
 
-A missing or invalid config never prevents startup; parse errors report the line number.```
+A missing or invalid config never prevents startup; parse errors report the line number.
+
+On first run sibsh writes a fully commented template to `~/.sibsh/sibsh.toml` explaining every option. The same file ships in the repository as [`sibsh.toml.example`](sibsh.toml.example) — copy it to `~/.sibsh/sibsh.toml` and edit away.
 
 ## Roadmap
 

@@ -318,4 +318,145 @@ mod tests {
         let cmd = Parser::parse("echo code:$?", 7).expect("parse should succeed");
         assert_eq!(cmd.args, vec!["echo", "code:7"]);
     }
+
+    // ---- Additional edge-case coverage ----
+
+    #[test]
+    fn empty_and_whitespace_lines_parse_to_nothing() {
+        for input in ["", "   ", "\t\t", " \t "] {
+            let cmd = parse(input);
+            assert!(cmd.args.is_empty(), "input {input:?}");
+            assert!(cmd.redirects.is_empty(), "input {input:?}");
+        }
+    }
+
+    #[test]
+    fn bare_redirect_line_parses() {
+        let cmd = parse("> out.txt");
+        assert!(cmd.args.is_empty());
+        assert_eq!(cmd.redirects[0].path, "out.txt");
+
+        let cmd = parse("< in.txt");
+        assert_eq!(cmd.redirects[0].mode, RedirectMode::Input);
+    }
+
+    #[test]
+    fn lone_dollar_is_literal() {
+        let cmd = parse("echo $");
+        assert_eq!(cmd.args, vec!["echo", "$"]);
+
+        let cmd = parse("echo $ ");
+        assert_eq!(cmd.args, vec!["echo", "$"]);
+    }
+
+    #[test]
+    fn unset_variable_expands_to_empty() {
+        // SAFETY: single-threaded test manipulating its own env var.
+        unsafe {
+            env::remove_var("SIBSH_DEFINITELY_UNSET_XYZ");
+        }
+        let cmd = parse("echo [$SIBSH_DEFINITELY_UNSET_XYZ]");
+        assert_eq!(cmd.args, vec!["echo", "[]"]);
+    }
+
+    #[test]
+    fn digits_underscore_in_var_names() {
+        // SAFETY: single-threaded test manipulating its own env var.
+        unsafe {
+            env::set_var("SIBSH_V2_x", "ok");
+        }
+        let cmd = parse("$SIBSH_V2_x");
+        assert_eq!(cmd.args, vec!["ok"]);
+    }
+
+    #[test]
+    fn variable_boundary_stops_at_punctuation() {
+        // SAFETY: single-threaded test manipulating its own env var.
+        unsafe {
+            env::set_var("SIBSH_AB", "yes");
+        }
+        let cmd = parse("$SIBSH_AB/file");
+        assert_eq!(cmd.args, vec!["yes/file"]);
+    }
+
+    #[test]
+    fn tab_separated_tokens() {
+        let cmd = parse("echo\ta\tb");
+        assert_eq!(cmd.args, vec!["echo", "a", "b"]);
+    }
+
+    #[test]
+    fn redirect_target_after_tab() {
+        let cmd = parse("echo hi >\tf.txt");
+        assert_eq!(cmd.redirects[0].path, "f.txt");
+    }
+
+    #[test]
+    fn adjacent_quotes_concatenate_into_one_token() {
+        let cmd = parse(r"echo a'b c'd");
+        assert_eq!(cmd.args, vec!["echo", "ab cd"]);
+
+        let cmd = parse(r#"echo pre"mid"post"#);
+        assert_eq!(cmd.args, vec!["echo", "premidpost"]);
+    }
+
+    #[test]
+    fn escaped_backslash_and_specials_outside_quotes() {
+        let cmd = parse(r"echo a\\b");
+        assert_eq!(cmd.args, vec!["echo", "a\\b"]);
+
+        let cmd = parse(r"echo \$HOME");
+        assert_eq!(cmd.args, vec!["echo", "$HOME"]);
+    }
+
+    #[test]
+    fn trailing_backslash_is_dropped_not_error() {
+        let cmd = parse("echo x\\");
+        assert_eq!(cmd.args, vec!["echo", "x"]);
+    }
+
+    #[test]
+    fn multiple_output_redirects_keep_order_last_wins_semantics() {
+        let cmd = parse("echo a > f1 >> f2");
+        assert_eq!(cmd.redirects.len(), 2);
+        assert_eq!(cmd.redirects[0], crate::parser::Redirection {
+            mode: RedirectMode::OutputTrunc,
+            path: "f1".into(),
+        });
+        assert_eq!(cmd.redirects[1], crate::parser::Redirection {
+            mode: RedirectMode::OutputAppend,
+            path: "f2".into(),
+        });
+    }
+
+    #[test]
+    fn operator_between_words_without_spaces() {
+        let cmd = parse("a<b>c");
+        assert_eq!(cmd.args, vec!["a"]);
+        assert_eq!(cmd.redirects.len(), 2);
+        assert_eq!(cmd.redirects[0].path, "b");
+        assert_eq!(cmd.redirects[1].path, "c");
+    }
+
+    #[test]
+    fn unclosed_single_quote_is_error() {
+        let err = Parser::parse("echo 'unclosed", 0).unwrap_err();
+        assert!(matches!(err, ShellError::ParseError(msg) if msg.contains("unclosed")));
+    }
+
+    #[test]
+    fn double_quote_escape_of_other_chars_keeps_backslash() {
+        let cmd = parse(r#"echo "a\nb""#);
+        assert_eq!(cmd.args, vec!["echo", "a\\nb"]);
+    }
+
+    #[test]
+    fn expansion_inside_double_quotes() {
+        // SAFETY: single-threaded test manipulating its own env var.
+        unsafe {
+            env::set_var("SIBSH_DQ", "inner");
+        }
+        let cmd = parse("echo \"[$SIBSH_DQ]\"");
+        assert_eq!(cmd.args, vec!["echo", "[inner]"]);
+    }
 }

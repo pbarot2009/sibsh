@@ -12,14 +12,14 @@ fully checked before starting the next one.
 ## Phase 0 — Project Setup & Tooling (complete)
 
 - [x] `Cargo.toml` at the repository root with:
-  - [x] `name = "sibsh"`, `version = "0.1.2"`, `edition = "2024"`
+  - [x] `name = "sibsh"`, current `version = "0.1.3"`, `edition = "2024"`
   - [x] `license = "Apache-2.0"` (matches README)
   - [x] `description` and `repository` metadata
   - [x] **No dependencies** — project policy is std-only (verified: Cargo.lock contains only sibsh)
 - [x] Verified `cargo build --release` works cleanly (Rust 1.98, zero warnings)
 - [x] `.gitignore` present (`/target`)
 - [x] `LICENSE` file present (Apache-2.0)
-- [ ] Optional CI: build + clippy + test on push (`.github/` exists; workflow TBD)
+- [x] CI workflow (`.github/workflows/ci.yml`): build + clippy + test on push and pull request
 
 ---
 
@@ -49,9 +49,9 @@ fully checked before starting the next one.
 Known polish items carried into later phases:
 
 - [x] ~~`cat` uses `read_to_string`~~ → now byte-safe via `io::copy` (fixed in 1.2)
-- [ ] `touch` opens files but does not update mtimes of existing files (deferred to Phase 2.0)
-- [ ] `setenv`/`unsetenv` aliases exist in code but are undocumented in README/help
-- [ ] `export KEY` (no `=`) silently sets empty value — decide intended semantics
+- [x] ~~`touch` does not update mtimes~~ → fixed in v0.1.3 via `File::set_modified`, with an integration test
+- [x] ~~`setenv`/`unsetenv` undocumented~~ → documented in help and README (v0.1.3 docs pass)
+- [x] ~~`export KEY` semantics undecided~~ → settled in v0.1.3: `export KEY` sets/markers KEY as empty (bash-compatible enough for basic use), documented in help and README
 
 ---
 
@@ -165,6 +165,99 @@ clear error messages.
 - [x] README updated: Features section, redirection examples, roadmap box `[x]`
 - [x] CHANGELOGS.md released as `[0.1.2] - 2026-08-22`; Cargo.toml bumped to 0.1.2
 - [x] `help` output updated with redirection syntax
+
+---
+
+### Additions — Tab Completion, Config File & Aliases (done in v0.1.3)
+
+Goal: interactive Tab completion, a runtime config file (`~/.sibsh/sibsh.toml`)
+with bashrc/zshrc imports, and command aliases. Basic support level — this is
+not a production shell yet. Still zero external dependencies.
+
+#### Design decisions (settled)
+
+- [x] Raw terminal mode without libc: drive external `stty raw -echo` /
+      `stty sane` via `std::process::Command`. When `stty` fails (piped stdin,
+      tests), fall back to plain buffered line reading automatically.
+- [x] TOML parsing without crates: small TOML-subset parser in `src/config.rs`
+      (sections, strings, integers, booleans, string arrays). Std has no TOML;
+      adding `toml`+serde would break the zero-dependency policy for little gain.
+- [x] Imports run through normal dispatch with errors ignored silently — rc
+      files contain bash-only syntax that must not spam stderr or kill startup.
+- [x] Alias expansion happens once per line on the first word only (no
+      recursion), splitting the alias value on whitespace.
+- [x] Out of scope (defer): fuzzy matching, case-insensitive completion,
+      `~user` completion, menu-driven candidate selection, `source` builtin.
+
+#### Tab completion & line editing (`src/completion.rs`) (done)
+
+- [x] First word completes builtins + aliases + `$PATH` executables (executable
+      bit checked via `PermissionsExt`), sorted and deduplicated
+- [x] Other words complete filesystem paths relative to the token's directory;
+      directories get `/` so the next Tab completes deeper
+- [x] Hidden files only match when the typed prefix starts with `.`
+- [x] Single unambiguous command completes with a trailing space; ambiguous
+      prefix inserts the shared prefix; second Tab lists candidates in columns
+- [x] Editing keys: backspace/delete char, left/right arrows, Home/End
+      (Ctrl+A/E), Delete key
+- [x] Up/Down arrows navigate history, saving/restoring the in-progress line
+- [x] Ctrl+C clears the line and re-prompts (does not exit); Ctrl+D on empty
+      line still exits; multi-byte UTF-8 input handled correctly
+- [x] Terminal restored (`stty sane`) after every line read
+
+#### Config file (`src/config.rs`) (done)
+
+- [x] Location `~/.sibsh/sibsh.toml`; override with `$SIBSH_CONFIG` (tests use it)
+- [x] Missing file or unreadable file never prevents startup; parse errors
+      print the offending line number and continue with defaults
+- [x] Supported keys: `prompt` (template with `{user}`, `{host}`, `{cwd}`,
+      `{status}`), `history_limit` (integer cap on in-memory history),
+      `[aliases]` table, `imports` array of shell files
+- [x] Comments (`#`), blank lines, and inline comments supported; `#` inside
+      quoted strings is preserved
+- [x] bashrc/zshrc imports executed at startup before the first prompt;
+      unsupported lines skipped silently, real read errors reported
+
+#### Aliases (`src/builtins.rs`, `src/shell.rs`) (done)
+
+- [x] `alias` lists all definitions; `alias name='value'` defines at runtime;
+      `unalias name` removes (unknown name is an error, status 1)
+- [x] First word of every dispatched line expands against aliases once
+- [x] Aliases participate in first-word Tab completion
+- [x] Startup aliases loaded from the `[aliases]` config table
+
+#### Test matrix — all cases verified passing
+
+| # | Case | Result |
+|---|------|--------|
+| 1 | `ec<Tab>` in a real PTY | completes to `echo ` and runs |
+| 2 | `hi<Tab>` in a real PTY | completes to `history ` |
+| 3 | Ambiguous prefix + second `<Tab>` | candidates listed in columns |
+| 4 | Path completion in temp dir | files + dirs found, dirs get `/` |
+| 5 | Hidden-file rule | `.hidden` skipped unless prefix starts with `.` |
+| 6 | Second word is path lookup, not command | no false command matches |
+| 7 | Multibyte common prefix | not split mid-character |
+| 8 | Config aliases expand and list | `hello` -> `echo world`, `alias` lists |
+| 9 | `unalias` removes; unknown name errors | status `[1]` shown |
+| 10 | Import file: comments, `export`, echo, bash-only line | export visible, bad line skipped |
+| 11 | Missing config file | shell starts normally |
+| 12 | Custom `prompt` template | rendered instead of default |
+| 13 | `touch` bumps mtime of existing file | verified by integration test |
+| 14 | Piped stdin (non-TTY) | plain reading fallback, no hang |
+
+#### Testing and verification for the additions (done)
+
+- [x] 60 unit tests total: parser 26, config parser 22, completion 12
+- [x] Integration suite grew to 40 tests: the Phase 1.2 matrix, built-in
+      coverage (echo -n, cd -, type/which, env/unset, help, cat, status
+      expansion, history), aliases, imports, prompt template, and config
+      fallback cases
+- [x] Live PTY smoke test via `script`: completion, double-tab listing, history
+- [x] `cargo clippy --all-targets`: 0 warnings
+- [x] `cargo test`: 100/100 passing (60 unit + 40 integration)
+- [x] `sibsh.toml.example` added to the repository; first-run auto-create of
+      the commented template verified by a unit test (`template_parses_as_valid_config`)
+- [x] README + CHANGELOGS updated; released as `[0.1.3] - 2026-08-23`
 
 ---
 
@@ -354,23 +447,24 @@ applied after quoting/expansion but before execution.
 - [ ] Job control: `jobs`, `fg`, `bg`, background execution with `&`
 - [ ] Persistent history file (`~/.sibsh_history`): load on start, append on exit,
       `HISTSIZE` cap, dedupe consecutive duplicates
-- [ ] Line editing (arrow keys, home/end, history navigation) — evaluate whether
-      to stay std-only (raw-termios via libc-free approach) or relax the
-      zero-dependency policy; record the decision in README
+- [ ] Line editing (arrow keys, home/end, history navigation) — basic support
+      already shipped in v0.1.3 (`src/completion.rs`, std-only via `stty`);
+      remaining work: persistent history across sessions, smarter redraws
 - [ ] Scripting mode: `sibsh script.sh`, shebang support (`#!/usr/bin/env sibsh`)
 - [ ] Logical operators `&&` and `||`, sequencing `;`
 - [ ] Tilde completion of `~user` forms, globbing `*.txt` (design decision)
-- [ ] Fix carried-over polish items from 1.1 (byte-safe `cat`, real `touch` mtimes)
+- [ ] Fix remaining carried-over polish items from 1.1 (byte-safe `cat` done in 1.2,
+      real `touch` mtimes done in 0.1.3 — nothing left here today)
 - [ ] Full regression pass over Phases 1.1–1.3 matrices
 - [ ] Release `1.0.0` with updated README, CHANGELOGS, LICENSE
 
 ---
 
-## Definition of Done (every phase) — met for Phases 0, 1.1, 1.2
+## Definition of Done (every phase) — met for Phases 0, 1.1, 1.2 and the v0.1.3 additions
 
-- [x] All checklist items checked *(Phases 0, 1.1, 1.2)*
+- [x] All checklist items checked *(Phases 0, 1.1, 1.2, additions)*
 - [x] `cargo build --release` warning-free
 - [x] `cargo clippy` clean (0 warnings, pedantic lints enabled)
-- [x] Integration tests passing (28/28)
+- [x] Tests passing (100/100: 60 unit + 40 integration)
 - [x] README + CHANGELOGS.md updated
-- [x] Smoke-tested through a real terminal session (piped scripts + interactive prompt render)
+- [x] Smoke-tested through a real terminal session (piped scripts + PTY completion run)

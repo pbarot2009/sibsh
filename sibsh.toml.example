@@ -1,0 +1,68 @@
+# sibsh configuration file (example)
+#
+# How to use this file:
+#   mkdir -p ~/.sibsh
+#   cp sibsh.toml.example ~/.sibsh/sibsh.toml
+#
+# Location: ~/.sibsh/sibsh.toml (override with the SIBSH_CONFIG env var)
+# A copy of this template is also written automatically on first run.
+#
+# Syntax: TOML subset - strings "like this", integers, booleans,
+# arrays of strings ["a", "b"], [sections], and # comments.
+#
+# Every key below is optional. Delete what you do not need;
+# a missing or invalid file never stops the shell from starting.
+
+# ------------------------------------------------------------------
+# prompt: custom prompt text. Available placeholders:
+#   {user}   your username          {host}  machine hostname
+#   {cwd}    current directory      {status} last exit code (0 on success)
+# Default (when this line is removed):
+#   "{user}@{host}:{cwd} ❯ " with colors and a red [status] on failure
+#
+# Examples:
+#   prompt = "sibsh {cwd} $ "
+#   prompt = "[{status}] {user}:{cwd} > "
+# ------------------------------------------------------------------
+#prompt = "{user}@{host}:{cwd} ❯ "
+
+# ------------------------------------------------------------------
+# history_limit: maximum number of commands kept in memory this session.
+# Oldest entries are dropped first. Remove the line for unlimited.
+# ------------------------------------------------------------------
+history_limit = 1000
+
+# ------------------------------------------------------------------
+# imports: shell files executed once at startup, before the first prompt,
+# bashrc/zshrc style. Each line of each file runs through sibsh:
+#
+#   WORKS:  export KEY=VALUE      (set environment variables)
+#           alias name='value'    (define aliases)
+#           plain commands        (echo hello, cd /tmp, ...)
+#           # comments            (and blank lines are skipped)
+#
+#   SKIPPED SILENTLY: bash-only syntax sibsh cannot parse, such as
+#           if/then/fi, case/esac, for loops, functions, [[ ]] tests,
+#           command substitution $(...), source, ulimit, stty ...
+#
+# This means you can point imports at your real ~/.bashrc or ~/.zshrc
+# and sibsh picks up the exports and aliases it understands. Lines it
+# cannot run are skipped without errors, so sharing one rc file between
+# bash/zsh/sibsh is safe.
+#
+# Paths support a leading ~/ for your home directory.
+# ------------------------------------------------------------------
+#imports = ["~/.bashrc", "~/.zshrc"]
+
+# ------------------------------------------------------------------
+# aliases: startup shortcuts. Same effect as typing
+#   alias ll='ls -la'
+# at the prompt. Runtime `alias`/`unalias` work too but are not saved
+# back to this file. The first word of a command expands once.
+#
+# Add or remove lines freely; values may contain multiple words.
+# ------------------------------------------------------------------
+[aliases]
+ll = "ls -la"
+la = "ls -a"
+gs = "git status"

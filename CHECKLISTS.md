@@ -245,6 +245,23 @@ not a production shell yet. Still zero external dependencies.
 | 13 | `touch` bumps mtime of existing file | verified by integration test |
 | 14 | Piped stdin (non-TTY) | plain reading fallback, no hang |
 
+#### Prompt rendering fixes in v0.1.46 (done)
+
+- [x] Misaligned two-line prompt: raw-mode `\n` does not carriage-return;
+      the editor now emits explicit `\r\n` for every newline (prompt, Enter,
+      Ctrl+C, candidate lists).
+- [x] Stacked / duplicated prompt frames while typing: repaints now move up
+      over the exact number of screen rows the previous render occupied,
+      measured with terminal width (`stty size`) and per-character display
+      widths including wide CJK characters — wrapping can no longer leave
+      stale rows.
+- [x] Cursor repositioning by display cells instead of char counts so
+      multibyte input stays aligned; candidate columns padded by display
+      width.
+- [x] Ctrl+C clears the edit before printing the `^C` marker.
+- [x] `tests/pty_harness.py`: PTY harness + mini terminal emulator running
+      fourteen interactive scenarios against the real binary — all passing.
+
 #### Fixes in v0.1.4 (done)
 
 - [x] Duplicate prompt in interactive mode: REPL and line reader both painted

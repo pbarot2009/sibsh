@@ -17,6 +17,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phase 2.0** — Job control, signal handling (`SIGINT`, `SIGTSTP`),
   persistent history file.
 
+## [0.1.46] - 2026-08-23
+
+### Fixed
+
+- **Misaligned two-line prompt**: in raw mode the kernel does not translate
+  `\n` into carriage-return + linefeed, so the bottom prompt line started at
+  whatever column the top line ended on. The editor now emits explicit
+  `\r\n` for every newline it writes (prompt, Enter, Ctrl+C, candidate
+  lists).
+- **Stacked / duplicated prompts while typing**: repaints moved up only the
+  prompt's newline count, ignoring rows added by terminal wrapping. A new
+  `Painter` tracks exactly how many screen rows the previous render
+  occupied (measured with a terminal-width query via `stty size` and
+  per-character display widths, including wide CJK characters) and clears
+  precisely that region before rewriting. Long lines, backspace storms,
+  history swaps between entries of different lengths, Home/End/arrow moves
+  inside wrapped lines, and completion candidate lists can no longer leave
+  stale fragments behind.
+- Cursor repositioning after edits now moves by display cells instead of
+  character counts, keeping multibyte input aligned.
+- Completion candidate columns are padded by display width so multibyte
+  names stay aligned; column layout uses the real terminal width.
+- Ctrl+C first clears the edited line, then prints the `^C` marker on a
+  fresh row.
+
+### Added
+
+- `tests/pty_harness.py`: a pseudo-terminal test harness with a mini
+  terminal emulator. It drives the real binary through fourteen interactive
+  scenarios (wrapping, editing storms, history navigation, multibyte input,
+  Ctrl+C, tab completion) and asserts exact screen state.
+
 ## [0.1.45] - 2026-08-23
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "sibsh"
-version = "0.1.45"
+version = "0.1.46"
 edition = "2024"
 authors = ["pbarot2009"]
 description = "Something Is Better Shell - A lightweight Unix shell in pure Rust"

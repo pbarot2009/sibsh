@@ -211,46 +211,197 @@ fn read_line_plain(prompt: &str) -> io::Result<Option<String>> {
     }
 }
 
-/// Repaints the prompt plus the edited line from a clean state.
-///
-/// The prompt may span multiple screen lines (two-line prompt), so the
-/// cursor first moves up over every prompt line *and* over any candidate
-/// list printed below, then `\x1b[J` clears from the cursor to the end of
-/// the screen before everything is rewritten.
-fn redraw(
-    out: &mut impl Write,
-    prompt: &str,
-    chars: &[char],
-    cursor: usize,
-    extra_lines_above: usize,
-) -> io::Result<()> {
-    let line: String = chars.iter().collect();
-    let up = prompt.matches('\n').count() + extra_lines_above;
-    if up > 0 {
-        write!(out, "\x1b[{up}A")?;
+/// Visible terminal cell width of `s`, skipping ANSI escape sequences.
+/// Wide CJK characters count as 2 cells, nerd-font private-use glyphs as 1.
+fn display_width(s: &str) -> usize {
+    let mut width = 0;
+    let mut in_ansi = false;
+    for ch in s.chars() {
+        match ch {
+            '\x1b' => in_ansi = true,
+            'a'..='z' | 'A'..='Z' if in_ansi => in_ansi = false,
+            _ if in_ansi => {}
+            _ => width += char_width(ch),
+        }
     }
-    write!(out, "\r\x1b[J{prompt}{line}")?;
-    if cursor < chars.len() {
-        write!(out, "\x1b[{}D", chars.len() - cursor)?;
+    width
+}
+
+/// Terminal cell width of one character.
+fn char_width(ch: char) -> usize {
+    let c = ch as u32;
+    match c {
+        // Control characters and combining/zero-width forms occupy no cells.
+        0x00..=0x1f | 0x7f | 0x0300..=0x036f | 0x200b..=0x200f | 0xfe00..=0xfe0f => 0,
+        // East Asian wide ranges (common blocks).
+        0x1100..=0x115f
+        | 0x2e80..=0x303e
+        | 0x3041..=0x33ff
+        | 0x3400..=0x4dbf
+        | 0x4e00..=0x9fff
+        | 0xa000..=0xa4cf
+        | 0xac00..=0xd7a3
+        | 0xf900..=0xfaff
+        | 0xfe30..=0xfe4f
+        | 0xff00..=0xff60
+        | 0xffe0..=0xffe6
+        | 0x20000..=0x2fffd
+        | 0x30000..=0x3fffd => 2,
+        _ => 1,
     }
-    out.flush()
+}
+
+/// Terminal width from `stty size`; falls back to 80 columns when the
+/// query fails (non-TTY callers never reach raw mode anyway).
+fn terminal_width() -> usize {
+    let Ok(output) = Command::new("stty").arg("size").output() else {
+        return 80;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.split_whitespace()
+        .nth(1)
+        .and_then(|cols| cols.parse().ok())
+        .filter(|cols| *cols > 0)
+        .unwrap_or(80)
+}
+
+/// Number of screen rows the render occupies when drawn from column 0 of a
+/// `term_cols`-wide terminal, accounting for line wrapping (deferred-wrap
+/// semantics, matching xterm and friends).
+fn render_rows(prompt: &str, line: &str, term_cols: usize) -> usize {
+    let full = format!("{prompt}{line}");
+    let mut rows = 1usize;
+    let mut col = 0usize;
+    let mut in_ansi = false;
+    for ch in full.chars() {
+        match ch {
+            '\x1b' => in_ansi = true,
+            'a'..='z' | 'A'..='Z' if in_ansi => in_ansi = false,
+            _ if in_ansi => {}
+            '\n' => {
+                rows += 1;
+                col = 0;
+            }
+            ch => {
+                let cw = char_width(ch);
+                if col + cw > term_cols {
+                    rows += 1;
+                    col = cw;
+                } else {
+                    col += cw;
+                }
+            }
+        }
+    }
+    rows
+}
+
+/// Owns everything needed to repaint the editing area: the prompt text,
+/// the terminal width, and how many screen rows the previous render
+/// occupied (including wrapped rows). Repainting moves the cursor to the
+/// top row of the previous render, clears to the end of the screen, and
+/// rewrites everything — so wrapping, long lines, history swaps, and
+/// candidate lists can never leave stale fragments behind.
+struct Painter {
+    prompt: String,
+    term_cols: usize,
+    /// Rows of the most recent paint, measured from its top row down to
+    /// and including the row the cursor currently sits on.
+    last_rows: usize,
+}
+
+impl Painter {
+    fn new(prompt: &str, out: &mut impl Write) -> io::Result<Self> {
+        let term_cols = terminal_width();
+        write!(out, "{}", crlf(prompt))?;
+        out.flush()?;
+        Ok(Self {
+            prompt: prompt.to_string(),
+            term_cols,
+            last_rows: render_rows(prompt, "", term_cols),
+        })
+    }
+
+    fn repaint(&mut self, out: &mut impl Write, chars: &[char], cursor: usize) -> io::Result<()> {
+        let line: String = chars.iter().collect();
+        let up = self.last_rows.saturating_sub(1);
+        if up > 0 {
+            write!(out, "\x1b[{up}A")?;
+        }
+        write!(out, "\r\x1b[J{}{line}", crlf(&self.prompt))?;
+        // Walk the cursor back from end-of-line to its edit position in
+        // display cells (not chars) so multibyte input stays aligned.
+        let behind: usize = chars[cursor..].iter().map(|c| char_width(*c)).sum();
+        if behind > 0 {
+            write!(out, "\x1b[{behind}D")?;
+        }
+        self.last_rows = render_rows(&self.prompt.clone(), &line, self.term_cols);
+        out.flush()
+    }
+}
+
+/// In raw mode the kernel does not translate `\n` into carriage-return +
+/// linefeed, so every newline the editor emits must carry its own `\r` or
+/// text lands at the previous line's ending column.
+fn crlf(text: &str) -> String {
+    text.replace('\n', "\r\n")
 }
 
 fn print_candidates(out: &mut impl Write, candidates: &[String]) -> io::Result<usize> {
-    const WIDTH: usize = 80;
-    let longest = candidates.iter().map(String::len).max().unwrap_or(0);
-    let columns = (WIDTH / (longest + 2)).max(1);
+    let term_cols = terminal_width();
+    let longest = candidates
+        .iter()
+        .map(|c| display_width(c))
+        .max()
+        .unwrap_or(0);
+    let columns = (term_cols / (longest + 2)).max(1);
 
     for (idx, candidate) in candidates.iter().enumerate() {
         if idx % columns == 0 {
-            writeln!(out)?;
+            write!(out, "\r\n")?;
         }
-        write!(out, "{candidate:<longest$}  ")?;
+        write!(out, "{candidate}")?;
+        // Pad to the column width with plain spaces so multibyte names
+        // stay aligned (the width format specifier counts bytes).
+        let pad = longest - display_width(candidate);
+        write!(out, "{}  ", " ".repeat(pad))?;
     }
-    writeln!(out)?;
+    write!(out, "\r\n")?;
     // Rows written plus the trailing newline: exactly how far the cursor
     // moved down, so the caller knows how far to move it back up.
     Ok(candidates.len().div_ceil(columns) + 1)
+}
+
+/// Applies one Tab press: insert the unambiguous completion, or list all
+/// candidates on a second Tab. Returns nothing; state is updated in place.
+fn handle_tab(
+    out: &mut impl Write,
+    painter: &mut Painter,
+    chars: &mut Vec<char>,
+    cursor: &mut usize,
+    aliases: &[(String, String)],
+    last_was_tab: &mut bool,
+) -> io::Result<()> {
+    let prefix: String = chars[..*cursor].iter().collect();
+    let completion = complete(&prefix, aliases);
+
+    if !completion.insert.is_empty() {
+        for ch in completion.insert.chars() {
+            chars.insert(*cursor, ch);
+            *cursor += 1;
+        }
+        painter.repaint(out, chars, *cursor)?;
+        *last_was_tab = false;
+    } else if *last_was_tab && completion.candidates.len() > 1 {
+        let rows = print_candidates(out, &completion.candidates)?;
+        // The candidate list extends the area that the next repaint must
+        // clear.
+        painter.last_rows += rows;
+        painter.repaint(out, chars, *cursor)?;
+    } else {
+        *last_was_tab = true;
+    }
+    Ok(())
 }
 
 /// Raw-mode line editor loop.
@@ -270,12 +421,11 @@ fn read_line_raw(
     let mut saved_line: Option<String> = None;
     let mut last_was_tab = false;
 
-    write!(out, "{prompt}")?;
-    out.flush()?;
+    let mut painter = Painter::new(prompt, &mut out)?;
 
     loop {
         if stdin.read(&mut byte)? == 0 {
-            writeln!(out)?;
+            write!(out, "\r\n")?;
             out.flush()?;
             return Ok(if chars.is_empty() {
                 None
@@ -286,60 +436,55 @@ fn read_line_raw(
 
         match byte[0] {
             b'\r' | b'\n' => {
-                writeln!(out)?;
+                write!(out, "\r\n")?;
                 out.flush()?;
                 return Ok(Some(chars.iter().collect()));
             }
             CTRL_C => {
-                writeln!(out, "^C")?;
+                // Clear the edited line first, then mark the cancel on a
+                // fresh row so nothing stale remains above.
+                painter.repaint(&mut out, &[], 0)?;
+                write!(out, "^C\r\n")?;
                 out.flush()?;
                 return Ok(Some(String::new()));
             }
             CTRL_D => {
                 if chars.is_empty() {
-                    writeln!(out)?;
+                    write!(out, "\r\n")?;
                     out.flush()?;
                     return Ok(None);
                 }
                 if cursor < chars.len() {
                     chars.remove(cursor);
-                    redraw(&mut out, prompt, &chars, cursor, 0)?;
+                    painter.repaint(&mut out, &chars, cursor)?;
                 }
             }
             BACKSPACE | 0x08 => {
                 if cursor > 0 {
                     cursor -= 1;
                     chars.remove(cursor);
-                    redraw(&mut out, prompt, &chars, cursor, 0)?;
+                    painter.repaint(&mut out, &chars, cursor)?;
                 }
                 last_was_tab = false;
             }
             b'\t' => {
-                let prefix: String = chars[..cursor].iter().collect();
-                let completion = complete(&prefix, aliases);
-
-                if !completion.insert.is_empty() {
-                    for ch in completion.insert.chars() {
-                        chars.insert(cursor, ch);
-                        cursor += 1;
-                    }
-                    redraw(&mut out, prompt, &chars, cursor, 0)?;
-                    last_was_tab = false;
-                } else if last_was_tab && completion.candidates.len() > 1 {
-                    let lines = print_candidates(&mut out, &completion.candidates)?;
-                    redraw(&mut out, prompt, &chars, cursor, lines)?;
-                } else {
-                    last_was_tab = true;
-                }
+                handle_tab(
+                    &mut out,
+                    &mut painter,
+                    &mut chars,
+                    &mut cursor,
+                    aliases,
+                    &mut last_was_tab,
+                )?;
             }
             CTRL_A => {
                 cursor = 0;
-                redraw(&mut out, prompt, &chars, cursor, 0)?;
+                painter.repaint(&mut out, &chars, cursor)?;
                 last_was_tab = false;
             }
             CTRL_E => {
                 cursor = chars.len();
-                redraw(&mut out, prompt, &chars, cursor, 0)?;
+                painter.repaint(&mut out, &chars, cursor)?;
                 last_was_tab = false;
             }
             0x1b => {
@@ -351,7 +496,7 @@ fn read_line_raw(
                     &mut hist_pos,
                     &mut saved_line,
                     history,
-                    prompt,
+                    &mut painter,
                     &mut out,
                 )?;
             }
@@ -360,7 +505,7 @@ fn read_line_raw(
                     chars.insert(cursor, ch);
                     cursor += 1;
                 }
-                redraw(&mut out, prompt, &chars, cursor, 0)?;
+                painter.repaint(&mut out, &chars, cursor)?;
                 last_was_tab = false;
             }
         }
@@ -378,7 +523,7 @@ fn handle_escape(
     hist_pos: &mut usize,
     saved_line: &mut Option<String>,
     history: &[String],
-    prompt: &str,
+    painter: &mut Painter,
     out: &mut impl Write,
 ) -> io::Result<()> {
     if stdin.read(byte)? == 0 || byte[0] != b'[' {
@@ -420,35 +565,35 @@ fn handle_escape(
             if let Some(line) = browse(up) {
                 *chars = line;
                 *cursor = chars.len();
-                redraw(out, prompt, chars, *cursor, 0)?;
+                painter.repaint(out, chars, *cursor)?;
             }
         }
         b'C' => {
             if *cursor < chars.len() {
                 *cursor += 1;
-                redraw(out, prompt, chars, *cursor, 0)?;
+                painter.repaint(out, chars, *cursor)?;
             }
         }
         b'D' => {
             if *cursor > 0 {
                 *cursor -= 1;
-                redraw(out, prompt, chars, *cursor, 0)?;
+                painter.repaint(out, chars, *cursor)?;
             }
         }
         b'H' => {
             *cursor = 0;
-            redraw(out, prompt, chars, *cursor, 0)?;
+            painter.repaint(out, chars, *cursor)?;
         }
         b'F' => {
             *cursor = chars.len();
-            redraw(out, prompt, chars, *cursor, 0)?;
+            painter.repaint(out, chars, *cursor)?;
         }
         b'3' => {
             // Delete key: sequence ends with `~`.
             let _ = stdin.read(byte)?;
             if *cursor < chars.len() {
                 chars.remove(*cursor);
-                redraw(out, prompt, chars, *cursor, 0)?;
+                painter.repaint(out, chars, *cursor)?;
             }
         }
         _ => {}
@@ -640,5 +785,48 @@ mod tests {
         let c = complete("echo\tzzzznope", &[]);
         assert!(c.candidates.is_empty());
         assert!(c.insert.is_empty());
+    }
+
+    #[test]
+    fn display_width_skips_ansi_sequences() {
+        assert_eq!(display_width("abc"), 3);
+        assert_eq!(display_width("\x1b[38;5;242m╭─\x1b[0m x"), 4);
+        assert_eq!(display_width("\x1b[1A\r\x1b[J"), 0);
+        assert_eq!(display_width(""), 0);
+    }
+
+    #[test]
+    fn char_width_handles_multibyte_classes() {
+        assert_eq!(char_width('a'), 1);
+        assert_eq!(char_width('é'), 1);
+        assert_eq!(char_width('中'), 2);
+        assert_eq!(char_width('│'), 1);
+        // Nerd-font private-use glyphs occupy one cell.
+        assert_eq!(char_width('\u{f418}'), 1);
+        // Control characters take no cells.
+        assert_eq!(char_width('\n'), 0);
+    }
+
+    #[test]
+    fn render_rows_counts_wrapping() {
+        let prompt = "top\n❯ ";
+        // Short buffer: two logical lines -> two rows.
+        assert_eq!(render_rows(prompt, "hi", 80), 2);
+        // Buffer wraps the second line past 80 columns.
+        assert_eq!(render_rows(prompt, &"z".repeat(200), 80), 4);
+        // Exactly-full line does not spawn an extra row (deferred wrap).
+        assert_eq!(render_rows("", &"z".repeat(80), 80), 1);
+        assert_eq!(render_rows("", &"z".repeat(81), 80), 2);
+        // Wide CJK characters count double toward wrapping.
+        assert_eq!(render_rows("", &"中".repeat(41), 80), 2);
+        // ANSI escapes add no width.
+        assert_eq!(render_rows("\x1b[31m❯\x1b[0m ", &"z".repeat(78), 80), 1);
+    }
+
+    #[test]
+    fn crlf_only_touches_newlines() {
+        assert_eq!(crlf("a\nb"), "a\r\nb");
+        assert_eq!(crlf("plain"), "plain");
+        assert_eq!(crlf("\n"), "\r\n");
     }
 }

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `echo_n_suppresses_trailing_newline` integration test depended on the host
+  username through the prompt text and failed on GitHub Actions runners. The
+  test now pins `USER` for the spawned shell so it passes identically on
+  Linux and macOS.
+
 ### Planned
 - **Phase 1.3** — Pipelines (`cmd1 | cmd2 | cmd3`) with concurrent stage execution.
   See [CHECKLISTS.md → Phase 1.3](CHECKLISTS.md#13--pipelines-next-phase-planned-for-v020).

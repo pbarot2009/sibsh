@@ -367,11 +367,13 @@ fn missing_config_file_starts_normally() {
 
 #[test]
 fn echo_n_suppresses_trailing_newline() {
-    let (out, code) = run_shell("echo -n hello\necho done\n");
+    // Pin USER so the prompt text is identical on every machine (CI runners
+    // use a different username, e.g. "runner").
+    let (out, code) = run_shell_with("echo -n hello\necho done\n", &[("USER", "ciuser")]);
     assert_eq!(code, 0);
     // Without -n, `hello` and the next prompt would be on separate lines.
     assert!(
-        plain_text(&out).contains("hellouser"),
+        plain_text(&out).contains("hellociuser"),
         "no-newline output joins next prompt: {out}"
     );
 }

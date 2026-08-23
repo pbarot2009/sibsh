@@ -17,6 +17,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phase 2.0** — Job control, signal handling (`SIGINT`, `SIGTSTP`),
   persistent history file.
 
+## [0.1.4] - 2026-08-23
+
+### Fixed
+
+- Interactive mode showed two prompts on one line: both the REPL and the line
+  reader painted it. Prompt rendering now belongs entirely to the line reader
+  (`completion::read_line`), matching zsh's ZLE / fish model where the editor is
+  the sole owner of prompt painting. Every redraw starts at column 0 with a
+  single prompt.
+- Non-terminal input (piped scripts) keeps its prompt output; the fallback path
+  prints the prompt once before reading.
+- CI failure `completes_builtin_commands`: completion unit tests depended on the
+  real `$PATH` of the machine (GitHub runner images ship different tools). New
+  `complete_in()` takes an explicit directory list; tests use an empty or
+  synthetic one so results are identical everywhere.
+- `cargo fmt --all` applied to all sources.
+
 ## [0.1.3] - 2026-08-23
 
 Tab completion, runtime configuration, and aliases.

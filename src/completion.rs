@@ -34,11 +34,21 @@ pub struct Completion {
 /// First word: builtins, aliases, then `$PATH` executables.
 /// Any other word: filesystem paths relative to the token's directory.
 pub fn complete(line: &str, aliases: &[(String, String)]) -> Completion {
+    let dirs: Vec<PathBuf> = env::var("PATH")
+        .map(|p| env::split_paths(&p).collect())
+        .unwrap_or_default();
+    complete_in(line, aliases, &dirs)
+}
+
+/// Like [`complete`], but searches only the given directories for executables.
+/// Tests pass an empty or synthetic list so results never depend on the
+/// machine's real `$PATH`.
+pub fn complete_in(line: &str, aliases: &[(String, String)], path_dirs: &[PathBuf]) -> Completion {
     let token_start = line.rfind([' ', '\t']).map_or(0, |idx| idx + 1);
     let token = &line[token_start..];
 
     let mut candidates = if token_start == 0 {
-        command_candidates(token, aliases)
+        command_candidates(token, aliases, path_dirs)
     } else {
         path_candidates(token)
     };
@@ -67,8 +77,13 @@ pub fn complete(line: &str, aliases: &[(String, String)]) -> Completion {
     Completion { insert, candidates }
 }
 
-/// Builtins + aliases + executables found in `$PATH` starting with `prefix`.
-fn command_candidates(prefix: &str, aliases: &[(String, String)]) -> Vec<String> {
+/// Builtins + aliases + executables found in the given directories starting
+/// with `prefix`.
+fn command_candidates(
+    prefix: &str,
+    aliases: &[(String, String)],
+    path_dirs: &[PathBuf],
+) -> Vec<String> {
     let mut candidates: Vec<String> = Vec::new();
 
     for name in Builtins::NAMES {
@@ -82,19 +97,17 @@ fn command_candidates(prefix: &str, aliases: &[(String, String)]) -> Vec<String>
         }
     }
 
-    if let Ok(path_var) = env::var("PATH") {
-        for dir in env::split_paths(&path_var) {
-            let Ok(entries) = fs::read_dir(dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if name.starts_with(prefix)
-                    && !candidates.contains(&name)
-                    && is_executable(&entry.path())
-                {
-                    candidates.push(name);
-                }
+    for dir in path_dirs {
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with(prefix)
+                && !candidates.contains(&name)
+                && is_executable(&entry.path())
+            {
+                candidates.push(name);
             }
         }
     }
@@ -174,7 +187,7 @@ pub fn read_line(
         let _ = stty(&["sane"]);
         result
     } else {
-        read_line_plain()
+        read_line_plain(prompt)
     }
 }
 
@@ -185,7 +198,12 @@ fn stty(args: &[&str]) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-fn read_line_plain() -> io::Result<Option<String>> {
+fn read_line_plain(prompt: &str) -> io::Result<Option<String>> {
+    // The line reader owns prompt painting in both modes; the REPL never
+    // prints the prompt itself (same model as zsh's ZLE and fish).
+    print!("{prompt}");
+    let _ = io::stdout().flush();
+
     let mut line = String::new();
     match io::stdin().read_line(&mut line)? {
         0 => Ok(None),
@@ -459,7 +477,8 @@ mod tests {
 
     #[test]
     fn completes_builtin_commands() {
-        let c = complete("ec", &[]);
+        // Empty path list: only builtins can match, regardless of machine.
+        let c = complete_in("ec", &[], &[]);
         assert_eq!(c.candidates, vec!["echo"]);
         assert_eq!(c.insert, "ho ");
     }
@@ -467,27 +486,44 @@ mod tests {
     #[test]
     fn completes_aliases() {
         let al = aliases(&[("gstat", "git status")]);
-        let c = complete("gst", &al);
+        let c = complete_in("gst", &al, &[]);
         assert_eq!(c.candidates, vec!["gstat"]);
         assert_eq!(c.insert, "at ");
     }
 
     #[test]
-    fn empty_prefix_lists_all_builtins() {
-        let c = complete("", &[]);
+    fn empty_prefix_lists_all_builtins_and_path_executables() {
+        // Synthetic PATH dir with one executable: deterministic on any machine.
+        let dir = env::temp_dir().join("sibsh_fakepath_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        let exe = dir.join("fakebin");
+        fs::write(&exe, "#!/bin/sh\n").expect("write");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+
+        let dirs = vec![dir.clone()];
+        let c = complete_in("", &[], &dirs);
         assert!(c.candidates.contains(&"echo".to_string()));
         assert!(c.candidates.contains(&"history".to_string()));
-        // PATH executables are included too (e.g. ls on any Unix system).
-        assert!(
-            c.candidates.contains(&"ls".to_string()),
-            "ls should be found in $PATH"
-        );
+        assert!(c.candidates.contains(&"fakebin".to_string()));
+        // Multiple candidates -> nothing unambiguous to insert.
         assert!(c.insert.is_empty());
+        // Non-executable files in a PATH dir are ignored.
+        fs::write(dir.join("notexec"), "x").expect("write");
+        let c2 = complete_in("notexec", &[], &dirs);
+        assert!(c2.candidates.is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn no_candidates_gives_nothing() {
-        let c = complete("zzzznope", &[]);
+        let c = complete_in("zzzznope", &[], &[]);
         assert!(c.candidates.is_empty());
         assert!(c.insert.is_empty());
     }
@@ -565,24 +601,17 @@ mod tests {
 
     #[test]
     fn ambiguous_prefix_inserts_shared_part_only() {
-        // `his` may match `history` (builtin) plus any PATH binary like
-        // `histgrep`; with just `history` matching, insert is its remainder
-        // plus a trailing space.
-        let c = complete("his", &[]);
-        if c.candidates.len() == 1 {
-            assert_eq!(c.insert, format!("{} ", &c.candidates[0][3..]));
-        } else {
-            for cand in &c.candidates {
-                assert!(cand.starts_with("his"));
-            }
-        }
+        // Deterministic with an empty PATH list: only `history` matches.
+        let c = complete_in("his", &[], &[]);
+        assert_eq!(c.candidates, vec!["history"]);
+        assert_eq!(c.insert, "tory ");
     }
 
     #[test]
     fn alias_and_builtin_deduplicated() {
         // Defining an alias named like an existing builtin must not duplicate it.
         let al = aliases(&[("echo", "echo -n")]);
-        let c = complete("ec", &al);
+        let c = complete_in("ec", &al, &[]);
         assert_eq!(c.candidates.iter().filter(|n| *n == "echo").count(), 1);
     }
 

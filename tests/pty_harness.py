@@ -3,7 +3,10 @@
 checks screen state with a mini terminal emulator.
 
 Supported emulator escapes (exactly what sibsh emits):
-  \r \n, printable chars (wrapping at width), CSI A / J / K / D / n D.
+  \\r \\n, printable chars (wrapping at width), CSI A / J / K / D / n D.
+
+The emulator models soft (wrap) vs hard (newline) line breaks, so window
+resizes can re-flow the grid the way a real terminal does.
 """
 import os, pty, re, select, subprocess, sys, time
 
@@ -15,22 +18,33 @@ class Screen:
         self.w = width
         self.h = height
         self.grid = [[" "] * width for _ in range(height)]
+        # hard[i] is True when row i is terminated by an explicit newline;
+        # rows created by automatic wrap are soft continuations.
+        self.hard = [False] * height
         self.row = 0
         self.col = 0
 
+    def _scroll_if_needed(self):
+        if self.row >= self.h:
+            del self.grid[0]
+            self.grid.append([" "] * self.w)
+            del self.hard[0]
+            self.hard.append(False)
+            self.row = self.h - 1
+
     def _put(self, ch):
         if self.col >= self.w:
+            # Soft continuation: no hard break recorded.
             self.col = 0
-            self._lf()
+            self.row += 1
+            self._scroll_if_needed()
         self.grid[self.row][self.col] = ch
         self.col += 1
 
     def _lf(self):
+        self.hard[self.row] = True
         self.row += 1
-        if self.row >= self.h:
-            del self.grid[0]
-            self.grid.append([" "] * self.w)
-            self.row = self.h - 1
+        self._scroll_if_needed()
 
     def feed(self, data):
         i = 0
@@ -53,6 +67,7 @@ class Screen:
                             self.grid[self.row][cc] = " "
                         for rr in range(self.row + 1, self.h):
                             self.grid[rr] = [" "] * self.w
+                            self.hard[rr] = False
                     elif kind == "K":
                         for cc in range(self.col, self.w):
                             self.grid[self.row][cc] = " "
@@ -69,12 +84,62 @@ class Screen:
                 self._put(c)
             i += 1
 
+    def resize(self, w, h):
+        """Re-flow the grid to a new size, the way terminals rearrange text
+        when their window changes. Soft-wrapped rows merge back together and
+        re-wrap at the new width; hard breaks are preserved. The cursor is
+        placed at the end of the segment it previously occupied."""
+        segs = []
+        starts = []
+        cur = ""
+        row_no = 0
+        for i in range(self.h):
+            text = "".join(self.grid[i])
+            if not cur:
+                starts.append(row_no)
+            cur += text.rstrip()
+            row_no += 1
+            if self.hard[i]:
+                segs.append(cur)
+                cur = ""
+        if cur:
+            segs.append(cur)
+
+        # Segment holding the cursor: last one that started at or above it.
+        cursor_seg = 0
+        for si, start in enumerate(starts[:len(segs)] if len(starts) > len(segs) else starts):
+            if start <= self.row:
+                cursor_seg = si
+
+        saved_w = self.w
+        self.w, self.h = w, h
+        self.grid = [[" "] * w for _ in range(h)]
+        self.hard = [False] * h
+        self.row = self.col = 0
+
+        cursor_pos = (0, 0)
+        for si, seg in enumerate(segs):
+            for ch in seg:
+                self._put(ch)
+            if si == cursor_seg:
+                cursor_pos = (self.row, self.col)
+            if si < len(segs) - 1:
+                self._lf()
+        self.row, self.col = cursor_pos
+
     def text(self):
         return "\n".join("".join(r).rstrip() for r in self.grid)
 
 
-def run_session(binary, script_steps, env_extra=None, cwd=None, timeout=15):
-    """script_steps: list of (bytes_to_send, delay_seconds)."""
+def run_session(binary, script_steps, env_extra=None, cwd=None, timeout=15,
+                width=WIDTH, height=HEIGHT):
+    """script_steps: list of (bytes_to_send, delay_seconds).
+
+    A step may instead be ("resize", (cols, rows), delay_seconds), which
+    changes the pty window size — exactly what a real terminal sends when
+    the user drags its border. Output and resizes are recorded in order and
+    replayed into the emulator so re-flow behaves realistically.
+    """
     env = dict(os.environ)
     env["SIBSH_FORCE_NON_ROOT"] = "1"
     env["USER"] = "ptyuser"
@@ -91,13 +156,11 @@ def run_session(binary, script_steps, env_extra=None, cwd=None, timeout=15):
         os.execve(binary, [binary], env)
 
     import fcntl, struct, termios
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", HEIGHT, WIDTH, 0, 0))
+    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
 
-    screen = Screen()
-    buf = b""
+    events = []
 
     def pump(dur=0.3):
-        nonlocal buf
         end = time.time() + dur
         while time.time() < end:
             r, _, _ = select.select([fd], [], [], 0.05)
@@ -108,13 +171,19 @@ def run_session(binary, script_steps, env_extra=None, cwd=None, timeout=15):
                     return False
                 if not chunk:
                     return False
-                buf += chunk
+                events.append(("data", chunk))
         return True
 
     pump(0.5)
-    for keys, delay in script_steps:
-        os.write(fd, keys)
-        if not pump(delay):
+    for step in script_steps:
+        if step[0] == "resize":
+            _, (cols, rows), delay = step
+            fcntl.ioctl(fd, termios.TIOCSWINSZ,
+                        struct.pack("HHHH", rows, cols, 0, 0))
+            events.append(("resize", cols, rows))
+        else:
+            os.write(fd, step[0])
+        if not pump(step[-1]):
             break
 
     try:
@@ -126,7 +195,12 @@ def run_session(binary, script_steps, env_extra=None, cwd=None, timeout=15):
     except ChildProcessError:
         pass
 
-    screen.feed(buf.decode("utf-8", errors="replace"))
+    screen = Screen(width, height)
+    for event in events:
+        if event[0] == "resize":
+            screen.resize(event[1], event[2])
+        else:
+            screen.feed(event[1].decode("utf-8", errors="replace"))
     return screen
 
 
@@ -246,6 +320,63 @@ def main():
     t = s.text()
     check("tab-on-wrapped-line: single clean frame pair",
           count_prompt_frames(t) == 2, repr(t[-500:]))
+
+    # 11. Terminal shrunk mid-typing: the editor must detect the new width on
+    # the next keystroke, redraw once under the new geometry, keep the typed
+    # buffer, and stay alive.
+    s = run_session(binary, [
+        (b"echo hel", 0.5),
+        ("resize", (40, 24), 0.4),
+        (b"lo world\r", 0.6),
+        (b"echo AFTER_SHRINK\r", 0.6),
+    ], width=80, height=24)
+    t = s.text()
+    check("shrink: buffer preserved and executed", "hello world" in t,
+          repr(t[-600:]))
+    check("shrink: shell still responsive", "AFTER_SHRINK" in t, repr(t[-600:]))
+    check("shrink: no duplicate prompt frames",
+          count_prompt_frames(t) <= 3, repr(t[-600:]))
+
+    # 12. Terminal grown mid-typing: same survival guarantees in reverse.
+    s = run_session(binary, [
+        (b"echo grow", 0.5),
+        ("resize", (100, 30), 0.4),
+        (b"nmark\r", 0.6),
+        (b"echo AFTER_GROW\r", 0.6),
+    ], width=40, height=20)
+    t = s.text()
+    check("grow: buffer preserved and executed", "grownmark" in t,
+          repr(t[-600:]))
+    check("grow: shell still responsive", "AFTER_GROW" in t, repr(t[-600:]))
+    check("grow: no duplicate prompt frames",
+          count_prompt_frames(t) <= 3, repr(t[-600:]))
+
+    # 13. Rapid successive resizes with an empty buffer must leave the next
+    # prompt perfectly usable.
+    s = run_session(binary, [
+        ("resize", (50, 20), 0.3),
+        ("resize", (90, 30), 0.3),
+        ("resize", (72, 24), 0.3),
+        (b"echo CLEAN_AFTER_RESIZE\r", 0.6),
+    ])
+    t = s.text()
+    check("rapid-resize: command runs cleanly", "CLEAN_AFTER_RESIZE" in t,
+          repr(t[-300:]))
+    check("rapid-resize: no frame debris",
+          count_prompt_frames(t) <= 2, repr(t[-300:]))
+
+    # 14. A line longer than the screen height forces scroll during typing;
+    # repaints must clamp to the visible screen instead of escaping into
+    # scrollback (which used to duplicate prompt frames).
+    long_line = b"true " + b"z" * 240
+    s = run_session(binary, [(long_line, 1.2), (b"\r", 0.5),
+                             (b"echo SCROLLMARK\r", 0.6)],
+                    width=30, height=8)
+    t = s.text()
+    check("scroll: shell survives oversized input", "SCROLLMARK" in t,
+          repr(t[-500:]))
+    check("scroll: bounded frame debris",
+          count_prompt_frames(t) <= 3, repr(t[-500:]))
 
     print(f"\n{len(failures)} failure(s)")
     sys.exit(1 if failures else 0)

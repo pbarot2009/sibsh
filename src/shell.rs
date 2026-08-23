@@ -3,13 +3,18 @@ use crate::completion;
 use crate::config::{self, Config};
 use crate::error::{ShellError, ShellResult};
 use crate::executor::{Executor, RedirectHandles};
-use crate::parser::Parser;
+use crate::parser::{ParsedCommand, Parser};
+use crate::pipeline;
 use crate::prompt::{self, IconMode, Prompt, PromptCtx};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
+/// Snapshot-able shell state. Pipelines clone this for builtin worker
+/// threads; mutations inside a pipeline therefore stay local to the
+/// pipeline, matching bash's subshell semantics for pipeline members.
+#[derive(Clone)]
 pub struct ShellState {
     pub history: Vec<String>,
     pub last_status: i32,
@@ -127,35 +132,46 @@ impl ShellState {
     }
 
     pub fn dispatch_line(&mut self, line: &str) -> ShellResult<i32> {
-        let mut command = Parser::parse(line, self.last_status)?;
+        let stages = Parser::parse(line, self.last_status)?;
+
+        if stages.len() > 1 {
+            return pipeline::run(self, &stages);
+        }
+
+        let mut command: ParsedCommand = stages.into_iter().next().expect("one stage");
         if command.args.is_empty() {
             return Ok(0);
         }
 
-        // Expand an alias in the first word once (no recursion). The alias
-        // value is split on whitespace, like other basic shells do.
-        if let Some(first) = command.args.first().cloned()
-            && let Some((_, expansion)) = self.aliases.iter().find(|(name, _)| *name == first)
-        {
-            let mut expanded: Vec<String> =
-                expansion.split_whitespace().map(String::from).collect();
-            expanded.extend(command.args.iter().skip(1).cloned());
-            command.args = expanded;
-        }
+        self.expand_first_alias(&mut command);
 
         // Open all redirection targets up front; on failure the command must
         // not run and the error propagates to the REPL (status 1).
-        let handles = RedirectHandles::open(&command.redirects)?;
+        let mut handles = RedirectHandles::open(&command.redirects)?;
 
-        let cmd = &command.args[0];
-        let result = if Builtins::is_builtin(cmd) {
-            Builtins::execute(self, &command.args, &handles)
+        let cmd = command.args[0].clone();
+        let result = if Builtins::is_builtin(&cmd) {
+            Builtins::execute(self, &command.args, &mut handles)
         } else {
-            Executor::execute(cmd, &command.args[1..], &handles)
+            Executor::execute(&cmd, &command.args[1..], &mut handles)
         };
 
         // Make sure builtin output lands before the next prompt renders.
         io::stdout().flush()?;
         result
+    }
+
+    /// Expands an alias in the first word of a parsed stage, once, without
+    /// recursion. The alias value is split on whitespace like in other basic
+    /// shells. Used by single-command dispatch and by every pipeline stage.
+    pub fn expand_first_alias(&self, stage: &mut ParsedCommand) {
+        if let Some(first) = stage.args.first().cloned()
+            && let Some((_, expansion)) = self.aliases.iter().find(|(name, _)| *name == first)
+        {
+            let mut expanded: Vec<String> =
+                expansion.split_whitespace().map(String::from).collect();
+            expanded.extend(stage.args.iter().skip(1).cloned());
+            stage.args = expanded;
+        }
     }
 }

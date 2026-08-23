@@ -245,6 +245,32 @@ not a production shell yet. Still zero external dependencies.
 | 13 | `touch` bumps mtime of existing file | verified by integration test |
 | 14 | Piped stdin (non-TTY) | plain reading fallback, no hang |
 
+#### Line editor resize survival in v0.2.1 (done)
+
+- [x] Duplicated prompt frames while typing fixed: the painter cached the
+      terminal width once per prompt and trusted a remembered row count; a
+      window resize (or a render taller than the screen) made repaints anchor
+      at the wrong row and stack duplicate prompts.
+- [x] New `src/tty.rs`: terminal size via `ioctl(TIOCGWINSZ)` declared against
+      the platform libc (zero external crates), replacing one `stty size`
+      process spawn per query with a single syscall; `stty size` parsing kept
+      as fallback, then 24×80.
+- [x] Resize detection on every paint: width change triggers a re-measure of
+      the render region under the new width; the redraw keeps the typed
+      buffer, cursor position, history position, saved live line, and pending
+      completion candidates intact.
+- [x] Viewport clamp: repaints never move the cursor past the top row when a
+      render is taller than the screen (scrolled input); the visible screen is
+      cleared and rewritten instead.
+- [x] `stty` stderr silenced on non-terminal stdin (piped scripts, tests).
+- [x] `tests/pty_harness.py` extended to 26 scenarios; the mini emulator now
+      models soft/hard line breaks and re-flows on resize, replaying output
+      and resizes chronologically. New scenarios: shrink mid-typing, grow
+      mid-typing, rapid successive resizes, and input longer than the screen.
+- [x] Regression-proven: the v0.1.46 binary fails the resize frame-stability
+      checks; the fixed build passes all 26 scenarios.
+- [x] Unit tests for the repaint math (`up_rows` clamping, resize re-measure).
+
 #### Prompt rendering fixes in v0.1.46 (done)
 
 - [x] Misaligned two-line prompt: raw-mode `\n` does not carriage-return;
@@ -320,66 +346,101 @@ starship / oh-my-posh style.
 
 ---
 
-### 1.3 — Pipelines (next phase, planned for v0.2.0)
+### 1.3 — Pipelines (done in v0.2.0)
 
 Goal: `cmd1 | cmd2 | cmd3` — stdout of each stage feeds stdin of the next,
 stages run concurrently, std-only.
 
-#### Design decisions (settle before coding)
+#### Design decisions (settled)
 
-- [ ] (?) Data model: extend `ParsedCommand` to a list of stages
-      (`Vec<Stage>`, each stage = args + its own redirects), splitting on
-      unquoted `|` during tokenization
-- [ ] (?) Concurrency: one thread per stage with `Stdio::piped()` chaining
-      (std-only); document thread-count cap if any
-- [ ] (?) Builtins inside pipelines (`history | grep cd`): recommended approach
-      is running the builtin in a worker thread writing into the pipe; decide
-      and document
-- [ ] Out of scope for 1.3 (defer): `|&` (stderr pipes), `>|` (noclobber
-      override), pipeline negation `!`
+- [x] Data model: `Parser::parse` now returns `Vec<ParsedCommand>` — one
+      entry per pipeline stage, each stage carrying its own args and
+      redirections. Stages split on unquoted `|` during tokenization.
+- [x] Concurrency: external stages are spawned as real processes chained
+      through OS pipes (`std::io::pipe`, std-only since Rust 1.87 — no
+      unsafe fd juggling). All stages launch before any is reaped. Pipe
+      ends are *moved* into children so the parent never retains a writer
+      copy (the classic missing-EOF hang). No thread-count cap: threads
+      exist only for builtin stages (at most one per builtin stage).
+- [x] Builtins inside pipelines (`history | grep cd`): each builtin stage
+      runs in a dedicated worker thread against a **snapshot clone** of
+      `ShellState`. Mutations inside a pipeline (`cd`, `export`, `exit`)
+      therefore do not affect the interactive shell — mirroring bash's
+      subshell semantics for pipeline members. Documented in
+      `src/pipeline.rs`.
+- [x] Out of scope for 1.3 (defer): `|&` (stderr pipes), `>|` (noclobber
+      override), pipeline negation `!`.
 
-#### Parser changes (`src/parser.rs`)
+#### Parser changes (`src/parser.rs`) (done)
 
-- [ ] Recognize `|` only in `ParseState::Normal` (quoted `'a | b'` stays literal)
-- [ ] Split line into stages; operator terminates current word (`echo hi|wc -c` works)
-- [ ] Syntax errors for: leading `|`, trailing `|` with no command,
-      double operators (`a || b` reserved for Phase 1.4 — explicit error for now)
-- [ ] Each stage keeps its own redirections (`cat < in | sort > out` parses correctly)
+- [x] `|` recognized only in `ParseState::Normal` (quoted `'a | b'` stays
+      literal; escaped `\|` too)
+- [x] Stages split; operator terminates the current word (`echo hi|wc -c`
+      works without spaces)
+- [x] Syntax errors: leading `|` ("unexpected '|'"), trailing `|` and empty
+      middle stage ("expected command after '|'"), and `a || b` rejected
+      explicitly ("'||' is reserved for a future release")
+- [x] A pipe cutting short a pending redirect filename (`echo > | cat`) is
+      a redirection syntax error
+- [x] Each stage keeps its own redirections (`cat < in | sort > out` parses
+      correctly)
 
-#### Execution engine (`src/shell.rs` or new `src/pipeline.rs`)
+#### Execution engine (`src/pipeline.rs`, new module) (done)
 
-- [ ] Single-stage lines behave exactly as in 1.2 (no regression)
-- [ ] Multi-stage: spawn all stages concurrently, wire pipes between them
-- [ ] Close parent-side pipe fds promptly so stages see EOF (classic hang risk)
-- [ ] Wait for every stage; exit status = **last** stage's status (bash semantics)
-- [ ] Unknown command mid-pipeline reports error but pipeline still drains
-- [ ] Builtins at any stage position work per design decision above
-- [ ] Redirections bind tighter than pipes (`cmd > f | cmd2`: first stage writes
-      to file) — verify matches bash
+- [x] Single-stage lines behave exactly as in 1.2 (no regression; the
+      entire pre-existing suite passes unchanged)
+- [x] Multi-stage: all stages spawned concurrently, pipes wired between them
+- [x] Parent-side pipe ends transferred or dropped before waiting — stages
+      see EOF promptly; `yes | head -5` terminates and 256 KiB transfers
+      across a pipe complete without deadlock
+- [x] Every stage is waited on; exit status = **last** stage's status (bash
+      semantics), verified both directions (`false | true` → 0,
+      `true | false` → 1) and via the prompt badge / `$?` expansion
+- [x] Unknown command mid-pipeline reports `command not found`, counts as
+      status 127 for its stage, and the pipeline still drains (later stages
+      run; upstream hits EPIPE, downstream sees EOF)
+- [x] Builtins at any stage position work (first via worker thread writer,
+      middle pass-through, last reading the pipe via the `cat` stdin path)
+- [x] Redirections bind tighter than pipes (`cmd > f | cmd2` writes the
+      file and the downstream stage reads immediate EOF; `cmd | sort < f`
+      drops the pipe read end so the upstream writer hits EPIPE) — matches
+      bash
+- [x] Alias expansion applies to the first word of every stage
 
-#### Test matrix (all cases must pass)
+#### Test matrix — all 10 cases verified passing
 
-| # | Input | Expected |
-|---|-------|----------|
+| # | Input | Result |
+|---|-------|--------|
 | 1 | `echo hello \| cat` | prints `hello` |
-| 2 | `printf 'b\na\n' \| sort` | prints `a\nb` |
-| 3 | `cat file \| grep x \| wc -l` | 3-stage chain counts correctly |
-| 4 | `yes \| head -5` | terminates (head closes pipe, yes gets SIGPIPE/dies cleanly) |
-| 5 | `nosuchcmd \| cat` | error printed, `cat` exits 0, overall status from last stage |
-| 6 | `history \| grep cd` | builtin feeds pipeline |
+| 2 | `printf 'b\na\n' \| sort` | prints `a` then `b` |
+| 3 | `printf … \| grep ^x \| wc -l` | 3-stage chain counts `3` |
+| 4 | `yes \| head -5` | terminates; exactly 5 lines; `yes` dies of SIGPIPE |
+| 5 | `nosuchcmd \| cat` | error on stderr, pipeline drains, overall status from last stage |
+| 6 | `history \| grep -c 'markerline$'` | builtin feeds pipeline, reports `1` |
 | 7 | `cat < in \| sort > out` | redirect + pipe mix works |
 | 8 | `false \| true` | overall status 0 (last stage wins) |
 | 9 | `true \| false` | overall status 1 |
 | 10 | `echo 'a \| b'` | literal text, NO pipeline |
 
-#### Testing & verification for 1.3
+#### Testing & verification for 1.3 (done)
 
-- [ ] Parser unit tests: stage splitting, quoted `\|`, syntax errors
-- [ ] Integration tests covering the full matrix above via stdin scripts
-- [ ] Stress: long chains (`\|` × 8) complete without deadlock/hang
-- [ ] `cargo clippy --all-targets` clean, no new warnings
-- [ ] README features/examples updated, roadmap box `[x]`
-- [ ] CHANGELOGS entry → release as next patch/minor per SemVer plan
+- [x] Parser unit tests: stage splitting, attached `a|b` form, quoted and
+      escaped `\|`, per-stage redirections, leading/trailing/empty-stage
+      errors, `||` reserved error, per-stage variable expansion
+- [x] Integration tests covering the full matrix above via stdin scripts,
+      plus: builtin mid-chain and last-stage, syntax-error recovery (shell
+      survives `| cat`, `cat |`, `a | | b`, `a || b`), redirect-binds-
+      tighter-than-pipe, alias expansion inside pipelines, prompt badge
+      after failed pipeline, and a 9-stage/8-pipe stress chain
+- [x] Stress: 9 stages / 8 pipes and a 256 KiB pipe transfer complete
+      without deadlock or hang
+- [x] `cargo clippy --all-targets` clean, 0 warnings
+- [x] PTY harness (16 interactive scenarios) still fully passing; pipelines
+      verified in a real PTY including output, failure badge, and `$?`
+- [x] README features/examples updated, roadmap box `[x]`
+- [x] CHANGELOGS entry → released as `[0.2.0] - 2026-08-23`; Cargo.toml
+      bumped to 0.2.0
+- [x] `help` output documents pipeline syntax
 
 ---
 
@@ -508,7 +569,8 @@ applied after quoting/expansion but before execution.
       `HISTSIZE` cap, dedupe consecutive duplicates
 - [ ] Line editing (arrow keys, home/end, history navigation) — basic support
       already shipped in v0.1.3 (`src/completion.rs`, std-only via `stty`);
-      remaining work: persistent history across sessions, smarter redraws
+      smarter redraws shipped in v0.2.1 (resize-safe painter, viewport
+      clamping); remaining work: persistent history across sessions
 - [ ] Scripting mode: `sibsh script.sh`, shebang support (`#!/usr/bin/env sibsh`)
 - [ ] Logical operators `&&` and `||`, sequencing `;`
 - [ ] Tilde completion of `~user` forms, globbing `*.txt` (design decision)
@@ -519,11 +581,11 @@ applied after quoting/expansion but before execution.
 
 ---
 
-## Definition of Done (every phase) — met for Phases 0, 1.1, 1.2 and the v0.1.3 additions
+## Definition of Done (every phase) — met for Phases 0, 1.1, 1.2, 1.3, the v0.1.3 additions, and the v0.2.1 editor fixes
 
-- [x] All checklist items checked *(Phases 0, 1.1, 1.2, additions)*
+- [x] All checklist items checked *(Phases 0, 1.1, 1.2, 1.3, additions, v0.2.1 fixes)*
 - [x] `cargo build --release` warning-free
 - [x] `cargo clippy` clean (0 warnings, pedantic lints enabled)
-- [x] Tests passing (100/100: 60 unit + 40 integration)
-- [x] README + CHANGELOGS.md updated
+- [x] Tests passing (168/168: 103 unit + 65 integration) plus the 26-scenario PTY harness
+- [x] README + CHECKLISTS + CHANGELOGS.md updated
 - [x] Smoke-tested through a real terminal session (piped scripts + PTY completion run)

@@ -27,21 +27,31 @@ pub struct Redirection {
 }
 
 /// The result of tokenizing one input line: the command words plus any
-/// redirections, in the order they appeared.
+/// redirections, in the order they appeared. A pipeline line yields one
+/// `ParsedCommand` per stage.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ParsedCommand {
     pub args: Vec<String>,
     pub redirects: Vec<Redirection>,
 }
 
+impl ParsedCommand {
+    /// True when the stage carries neither arguments nor redirections.
+    pub fn is_empty(&self) -> bool {
+        self.args.is_empty() && self.redirects.is_empty()
+    }
+}
+
 pub struct Parser;
 
 impl Parser {
-    /// Tokenizes an input line into arguments and redirections, expanding
-    /// variables and stripping quotes. Operators (`>`, `>>`, `<`) are only
-    /// recognized outside quotes, so `echo 'a > b'` stays a literal argument.
-    pub fn parse(input: &str, last_status: i32) -> ShellResult<ParsedCommand> {
-        let mut command = ParsedCommand::default();
+    /// Tokenizes an input line into pipeline stages, expanding variables and
+    /// stripping quotes. Operators (`>`, `>>`, `<`, `|`) are only recognized
+    /// outside quotes, so `echo 'a > b'` stays a literal argument while
+    /// `cat f | sort` splits into two stages. Each stage keeps its own
+    /// redirections; a single-command line yields a one-element vector.
+    pub fn parse(input: &str, last_status: i32) -> ShellResult<Vec<ParsedCommand>> {
+        let mut stages: Vec<ParsedCommand> = vec![ParsedCommand::default()];
         let mut current_token = String::new();
         let mut state = ParseState::Normal;
         let mut pending_redirect: Option<RedirectMode> = None;
@@ -51,7 +61,11 @@ impl Parser {
             match state {
                 ParseState::Normal => match ch {
                     ' ' | '\t' | '\r' | '\n' => {
-                        Self::flush_token(&mut command, &mut current_token, &mut pending_redirect);
+                        Self::flush_token(
+                            stages.last_mut().expect("stage always present"),
+                            &mut current_token,
+                            &mut pending_redirect,
+                        );
                     }
                     '\'' => {
                         state = ParseState::InSingleQuote;
@@ -68,9 +82,20 @@ impl Parser {
                         let var_value = Self::extract_var(&mut chars, last_status);
                         current_token.push_str(&var_value);
                     }
+                    '|' => {
+                        Self::check_pipe(&mut chars, pending_redirect, &current_token)?;
+                        // The operator terminates the current word and closes
+                        // the stage (`echo hi|wc -c` works without spaces).
+                        Self::flush_token(
+                            stages.last_mut().expect("stage always present"),
+                            &mut current_token,
+                            &mut pending_redirect,
+                        );
+                        stages.push(ParsedCommand::default());
+                    }
                     '<' => {
                         Self::start_redirect(
-                            &mut command,
+                            stages.last_mut().expect("stage always present"),
                             &mut current_token,
                             &mut pending_redirect,
                             RedirectMode::Input,
@@ -84,7 +109,7 @@ impl Parser {
                             RedirectMode::OutputTrunc
                         };
                         Self::start_redirect(
-                            &mut command,
+                            stages.last_mut().expect("stage always present"),
                             &mut current_token,
                             &mut pending_redirect,
                             mode,
@@ -103,23 +128,8 @@ impl Parser {
                     }
                 },
                 ParseState::InDoubleQuote => {
-                    if ch == '"' {
+                    if Self::double_quote_step(ch, &mut chars, &mut current_token, last_status) {
                         state = ParseState::Normal;
-                    } else if ch == '\\' {
-                        if let Some(&next_ch) = chars.peek() {
-                            if next_ch == '"' || next_ch == '\\' || next_ch == '$' {
-                                current_token.push(chars.next().unwrap());
-                            } else {
-                                current_token.push('\\');
-                            }
-                        } else {
-                            current_token.push('\\');
-                        }
-                    } else if ch == '$' {
-                        let var_value = Self::extract_var(&mut chars, last_status);
-                        current_token.push_str(&var_value);
-                    } else {
-                        current_token.push(ch);
                     }
                 }
             }
@@ -131,24 +141,109 @@ impl Parser {
             ));
         }
 
-        // Commit a trailing word: either a redirection target (`echo hi > out`)
-        // or the final argument. If an operator was still awaiting a target
-        // (e.g. `echo hi >`, or `> "$EMPTY"` expanding to nothing), that is a
-        // syntax error.
-        Self::flush_token(&mut command, &mut current_token, &mut pending_redirect);
+        // Commit a trailing word (redirection target or final argument) and
+        // reject dangling operators.
+        Self::finish_line(
+            stages.last_mut().expect("stage always present"),
+            &mut current_token,
+            &mut pending_redirect,
+        )?;
+
+        // Every stage between pipes must carry something: `| cmd`, `cmd |`,
+        // and `a | | b` are syntax errors, matching bash.
+        Self::validate_stages(&stages)?;
+
+        Ok(stages)
+    }
+
+    /// Commits the line's trailing word and rejects an operator still
+    /// awaiting its filename (`echo hi >`, or `> "$EMPTY"` expanding to
+    /// nothing).
+    fn finish_line(
+        stage: &mut ParsedCommand,
+        current_token: &mut String,
+        pending_redirect: &mut Option<RedirectMode>,
+    ) -> ShellResult<()> {
+        Self::flush_token(stage, current_token, pending_redirect);
         if pending_redirect.is_some() {
             return Err(ShellError::ParseError(
                 "expected filename after redirection".to_string(),
             ));
         }
+        Ok(())
+    }
 
-        Ok(command)
+    /// Rejects pipelines with empty stages: a leading `|`, a trailing `|`, or
+    /// nothing between two pipes. Single-command lines are always accepted.
+    fn validate_stages(stages: &[ParsedCommand]) -> ShellResult<()> {
+        if stages.len() > 1
+            && let Some(bad) = stages.iter().position(ParsedCommand::is_empty)
+        {
+            let message = if bad == 0 {
+                "unexpected '|'"
+            } else {
+                "expected command after '|'"
+            };
+            return Err(ShellError::ParseError(message.to_string()));
+        }
+        Ok(())
+    }
+
+    /// Rejects an unquoted `||` (reserved for Phase 1.4) and a pipe that
+    /// would cut short a redirect's filename (`echo > | cat`).
+    fn check_pipe(
+        chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+        pending_redirect: Option<RedirectMode>,
+        current_token: &str,
+    ) -> ShellResult<()> {
+        if chars.peek() == Some(&'|') {
+            chars.next();
+            return Err(ShellError::ParseError(
+                "'||' is reserved for a future release".to_string(),
+            ));
+        }
+        if pending_redirect.is_some() && current_token.is_empty() {
+            return Err(ShellError::ParseError(
+                "expected filename after redirection".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Handles one character inside double quotes: the closing quote,
+    /// escapes (`\"`, `\\`, `\$`), and variable expansion. Returns `true`
+    /// when the quote closed.
+    fn double_quote_step(
+        ch: char,
+        chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+        current_token: &mut String,
+        last_status: i32,
+    ) -> bool {
+        if ch == '"' {
+            return true;
+        }
+        if ch == '\\' {
+            match chars.peek() {
+                Some(&next_ch) if next_ch == '"' || next_ch == '\\' || next_ch == '$' => {
+                    current_token.push(chars.next().expect("peeked char"));
+                }
+                _ => current_token.push('\\'),
+            }
+            return false;
+        }
+        if ch == '$' {
+            let var_value = Self::extract_var(chars, last_status);
+            current_token.push_str(&var_value);
+            return false;
+        }
+        current_token.push(ch);
+        false
     }
 
     /// Commits the token being built either as a pending redirection target
     /// or as a command argument.
     fn flush_token(
-        command: &mut ParsedCommand,
+        stage: &mut ParsedCommand,
         current_token: &mut String,
         pending_redirect: &mut Option<RedirectMode>,
     ) {
@@ -156,12 +251,12 @@ impl Parser {
             return;
         }
         if let Some(mode) = pending_redirect.take() {
-            command.redirects.push(Redirection {
+            stage.redirects.push(Redirection {
                 mode,
                 path: current_token.clone(),
             });
         } else {
-            command.args.push(current_token.clone());
+            stage.args.push(current_token.clone());
         }
         current_token.clear();
     }
@@ -170,7 +265,7 @@ impl Parser {
     /// current word (`echo hi>out` works), and two operators in a row without
     /// a filename (`echo > > f`) are a syntax error.
     fn start_redirect(
-        command: &mut ParsedCommand,
+        stage: &mut ParsedCommand,
         current_token: &mut String,
         pending_redirect: &mut Option<RedirectMode>,
         mode: RedirectMode,
@@ -180,7 +275,7 @@ impl Parser {
                 "expected filename after redirection".to_string(),
             ));
         }
-        Self::flush_token(command, current_token, pending_redirect);
+        Self::flush_token(stage, current_token, pending_redirect);
         *pending_redirect = Some(mode);
         Ok(())
     }
@@ -218,7 +313,20 @@ mod tests {
     use std::env;
 
     fn parse(input: &str) -> crate::parser::ParsedCommand {
+        let stages = Parser::parse(input, 0).expect("parse should succeed");
+        assert_eq!(stages.len(), 1, "expected a single stage: {input:?}");
+        stages.into_iter().next().expect("one stage")
+    }
+
+    fn parse_stages(input: &str) -> Vec<crate::parser::ParsedCommand> {
         Parser::parse(input, 0).expect("parse should succeed")
+    }
+
+    fn parse_err(input: &str) -> String {
+        match Parser::parse(input, 0) {
+            Err(ShellError::ParseError(msg)) => msg,
+            other => panic!("expected parse error for {input:?}, got {other:?}"),
+        }
     }
 
     #[test]
@@ -309,10 +417,109 @@ mod tests {
         assert!(matches!(err, ShellError::ParseError(msg) if msg.contains("unclosed")));
     }
 
+    // ---- Phase 1.3: pipelines ----
+
+    #[test]
+    fn splits_two_stages() {
+        let stages = parse_stages("echo hello | cat");
+        assert_eq!(stages.len(), 2);
+        assert_eq!(stages[0].args, vec!["echo", "hello"]);
+        assert_eq!(stages[1].args, vec!["cat"]);
+        assert!(stages.iter().all(|s| s.redirects.is_empty()));
+    }
+
+    #[test]
+    fn pipe_without_spaces_splits_words() {
+        let stages = parse_stages("echo hi|wc -c");
+        assert_eq!(stages.len(), 2);
+        assert_eq!(stages[0].args, vec!["echo", "hi"]);
+        assert_eq!(stages[1].args, vec!["wc", "-c"]);
+    }
+
+    #[test]
+    fn three_stage_chain() {
+        let stages = parse_stages("cat f | grep x | wc -l");
+        assert_eq!(stages.len(), 3);
+        assert_eq!(stages[0].args, vec!["cat", "f"]);
+        assert_eq!(stages[1].args, vec!["grep", "x"]);
+        assert_eq!(stages[2].args, vec!["wc", "-l"]);
+    }
+
+    #[test]
+    fn quoted_pipe_stays_literal_single_stage() {
+        let cmd = parse("echo 'a | b'");
+        assert_eq!(cmd.args, vec!["echo", "a | b"]);
+
+        let cmd = parse("echo \"x|y\"");
+        assert_eq!(cmd.args, vec!["echo", "x|y"]);
+
+        let cmd = parse(r"echo a\|b");
+        assert_eq!(cmd.args, vec!["echo", "a|b"]);
+    }
+
+    #[test]
+    fn each_stage_keeps_its_own_redirections() {
+        let stages = parse_stages("cat < in | sort > out | wc -c >> log");
+        assert_eq!(stages.len(), 3);
+        assert_eq!(stages[0].redirects[0].mode, RedirectMode::Input);
+        assert_eq!(stages[0].redirects[0].path, "in");
+        assert_eq!(stages[1].redirects[0].mode, RedirectMode::OutputTrunc);
+        assert_eq!(stages[1].redirects[0].path, "out");
+        assert_eq!(stages[2].redirects[0].mode, RedirectMode::OutputAppend);
+        assert_eq!(stages[2].redirects[0].path, "log");
+    }
+
+    #[test]
+    fn leading_pipe_is_syntax_error() {
+        let msg = parse_err("| cat");
+        assert!(msg.contains("unexpected"), "{msg}");
+
+        let msg = parse_err("   | cat");
+        assert!(msg.contains("unexpected"), "{msg}");
+    }
+
+    #[test]
+    fn trailing_pipe_is_syntax_error() {
+        let msg = parse_err("cat |");
+        assert!(msg.contains("expected command after '|'"), "{msg}");
+
+        let msg = parse_err("cat |   ");
+        assert!(msg.contains("expected command after '|'"), "{msg}");
+    }
+
+    #[test]
+    fn empty_middle_stage_is_syntax_error() {
+        let msg = parse_err("a | | b");
+        assert!(msg.contains("expected command after '|'"), "{msg}");
+    }
+
+    #[test]
+    fn double_pipe_is_reserved_error() {
+        let msg = parse_err("a || b");
+        assert!(msg.contains("reserved"), "{msg}");
+    }
+
+    #[test]
+    fn redirect_before_pipe_is_filename_error() {
+        let msg = parse_err("echo > | cat");
+        assert!(msg.contains("filename"), "{msg}");
+    }
+
+    #[test]
+    fn variable_expansion_works_per_stage() {
+        // SAFETY: single-threaded test manipulating its own env var.
+        unsafe {
+            env::set_var("SIBSH_PIPE_VAR", "zz");
+        }
+        let stages = parse_stages("echo $SIBSH_PIPE_VAR | cat");
+        assert_eq!(stages[0].args, vec!["echo", "zz"]);
+        assert_eq!(stages[1].args, vec!["cat"]);
+    }
+
     #[test]
     fn status_expansion() {
-        let cmd = Parser::parse("echo code:$?", 7).expect("parse should succeed");
-        assert_eq!(cmd.args, vec!["echo", "code:7"]);
+        let stages = Parser::parse("echo code:$?", 7).expect("parse should succeed");
+        assert_eq!(stages[0].args, vec!["echo", "code:7"]);
     }
 
     // ---- Additional edge-case coverage ----

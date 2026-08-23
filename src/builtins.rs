@@ -22,7 +22,22 @@ impl Builtins {
     pub fn execute(
         state: &mut ShellState,
         args: &[String],
-        redirects: &RedirectHandles,
+        redirects: &mut RedirectHandles,
+    ) -> ShellResult<i32> {
+        let out = redirects.builtin_writer()?;
+        let mut input = redirects.builtin_reader()?;
+        Self::dispatch(state, args, &mut input, out)
+    }
+
+    /// Core builtin dispatcher over explicit I/O streams. The same code path
+    /// serves interactive use, file redirection, and pipeline worker threads:
+    /// `input` is `Some` only when a file or pipe feeds stdin, and `out` is
+    /// wherever output must land (stdout lock, file, or pipe).
+    pub fn dispatch(
+        state: &mut ShellState,
+        args: &[String],
+        input: &mut Option<Box<dyn Read + Send>>,
+        mut out: Box<dyn Write + Send>,
     ) -> ShellResult<i32> {
         if args.is_empty() {
             return Ok(0);
@@ -30,13 +45,6 @@ impl Builtins {
 
         let cmd = args[0].as_str();
         let cmd_args = &args[1..];
-
-        // Builtins write through an explicit handle so `echo hi > f.txt`
-        // redirects without touching global stdout state.
-        let mut out: Box<dyn Write> = match &redirects.stdout {
-            Some(file) => Box::new(file.try_clone()?),
-            None => Box::new(io::stdout().lock()),
-        };
 
         let result = match cmd {
             "cd" => Ok(Self::builtin_cd(state, cmd_args, &mut out)),
@@ -52,7 +60,7 @@ impl Builtins {
             "unset" | "unsetenv" => Ok(Self::builtin_unset(cmd_args)),
             "history" => Ok(Self::builtin_history(&mut out, state)),
             "touch" => Ok(Self::builtin_touch(cmd_args)),
-            "cat" => Self::builtin_cat(redirects.stdin.as_ref(), &mut out, cmd_args),
+            "cat" => Self::builtin_cat(input, &mut out, cmd_args),
             "true" => Ok(0),
             "false" => Ok(1),
             "alias" | "unalias" => Ok(Self::builtin_alias(state, cmd, cmd_args, &mut out)),
@@ -189,6 +197,10 @@ impl Builtins {
         let _ = writeln!(
             out,
             "Redirection: cmd > file (create), cmd >> file (append), cmd < file (stdin)"
+        );
+        let _ = writeln!(
+            out,
+            "Pipelines: cmd1 | cmd2 | cmd3 (stages run concurrently)"
         );
         let _ = writeln!(
             out,
@@ -356,18 +368,22 @@ impl Builtins {
     }
 
     /// Byte-safe `cat`: copies raw bytes so binary files survive intact.
-    /// With no operands it echoes stdin (or the redirected input file).
+    /// With no operands it echoes stdin — a redirected file or pipe when one
+    /// is attached, otherwise the shell's own stdin.
     fn builtin_cat(
-        stdin_file: Option<&fs::File>,
+        input: &mut Option<Box<dyn Read + Send>>,
         out: &mut dyn Write,
         args: &[String],
     ) -> ShellResult<i32> {
-        let mut input: Box<dyn Read> = match stdin_file {
-            Some(file) => Box::new(file.try_clone()?),
-            None => Box::new(io::stdin()),
-        };
         if args.is_empty() {
-            io::copy(&mut input, out)?;
+            match input.as_deref_mut() {
+                Some(reader) => {
+                    io::copy(reader, out)?;
+                }
+                None => {
+                    io::copy(&mut io::stdin(), out)?;
+                }
+            }
             return Ok(0);
         }
 

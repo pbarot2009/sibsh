@@ -4,8 +4,10 @@ mod config;
 mod error;
 mod executor;
 mod parser;
+mod pipeline;
 mod prompt;
 mod shell;
+mod tty;
 
 use shell::ShellState;
 use std::process;

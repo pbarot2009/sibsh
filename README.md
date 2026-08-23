@@ -4,14 +4,16 @@ sibsh (Something Is Better Shell) is a lightweight, zero-dependency Unix shell w
 
 The goal is to build a fast, reliable shell from scratch using only the Rust standard library.
 
-## Features (Phase 1.2 + additions)
+## Features (Phase 1.3)
 
 - **Zero External Dependencies**: Built entirely using Rust standard library (`std`).
+- **Pipelines**: `cmd1 | cmd2 | cmd3` chains stdout into stdin across any number of stages. Stages run concurrently — external commands as processes wired with OS pipes, built-ins in worker threads. The exit status is the last stage's, unknown commands report an error without stalling the pipeline, and redirections bind tighter than pipes (`cmd > f | cmd2` writes the file).
 - **Interactive REPL**: Read-Eval-Print loop with a two-line segment prompt, error status display, and EOF handling.
 - **Segment Prompt**: `╭─ [sibsh] ~/code/project on  main [⇡2 ⇣1 !3 ?1] via  rs [3.42s ]` over a `╰─❯` input line — git branch and dirty flags, SSH-only `user@host`, language detection (rs/go/c), 2-second execution timer, `[127 ✘]` exit badge with red pointer, root-mode `#`, deep-path truncation to `…/`, fixed ANSI-256 palette, and an `icons = "ascii"` fallback mode.
 - **Command Parser**: Supports single quotes (`'...'`), double quotes (`"..."`), escape characters, and environment variable expansion (`$VAR`, `$?`).
 - **I/O Redirection**: `cmd > file` (create/truncate), `cmd >> file` (append), and `cmd < file` (stdin) — for external commands **and** built-ins, with quote-aware parsing so `echo 'a > b'` stays literal.
 - **Tab Completion**: First Tab completes built-ins, aliases, `$PATH` executables, and file paths; a second Tab lists all candidates. Includes line editing (arrows, Home/End, backspace) and Up/Down history navigation.
+- **Resize-Safe Line Editor**: The editor re-queries the terminal size (single `ioctl(TIOCGWINSZ)` syscall) before every repaint. Resizing the window mid-line redraws once under the new geometry with the typed text, cursor position, history state, and pending completions fully preserved — no duplicated prompt frames. Renders taller than the screen clamp to the viewport instead of corrupting scrollback.
 - **Configuration File**: `~/.sibsh/sibsh.toml` sets the prompt template, history limit, startup aliases, and imports of bash/zsh rc files — parsed by a small TOML-subset parser, still zero dependencies.
 - **Aliases**: Define with `alias name='value'`, remove with `unalias`; loaded from config at startup.
 - **External Command Execution**: Resolves binaries in `$PATH` and handles process execution with standard I/O inheritance.
@@ -113,6 +115,15 @@ wc -l < sorted.txt
 # Quoted operators are literal text
 echo 'a > b'    # prints: a > b
 
+# Pipelines
+echo hello | cat
+printf 'b\na\n' | sort          # prints: a, then b
+cat access.log | grep ERROR | wc -l   # stages run concurrently
+history | grep cd               # built-ins work at any stage
+cat < notes.txt | sort > sorted.txt   # redirects mix with pipes
+false | true                    # status 0 (last stage wins)
+true | false                    # status 1 (last stage wins)
+
 # Aliases
 alias ll='ls -la'
 ll
@@ -126,7 +137,7 @@ exit 0
 
 Press Tab to complete the current word:
 
-- The first word completes built-ins, aliases, then executables found in `$PATH`.
+- The first word completes built-ins, aliases, then executables found in `$PATH`; this applies to the first word of every pipeline stage.
 - Other words complete filesystem paths; directories get a trailing `/` so the next Tab completes deeper.
 - Hidden files only match when the typed prefix starts with `.`.
 - A unique match completes with a trailing space; pressing Tab again lists all candidates in columns.
@@ -162,8 +173,10 @@ On first run sibsh writes a fully commented template to `~/.sibsh/sibsh.toml` ex
 - [x] **Phase 1.2**: I/O Redirection (`>`, `>>`, `<`) for external commands and built-ins.
   - Quote-aware parsing (`echo 'a > b'` is literal), attached (`>file`) and spaced (`> file`) forms, `$VAR` expansion inside filenames, clear errors for missing filenames or unreadable/unwritable targets, and byte-safe `cat`.
 - [x] **Additions (v0.1.3)**: Tab completion with line editing and history navigation; `~/.sibsh/sibsh.toml` configuration (prompt template, history limit); aliases (`alias`/`unalias`) with bashrc/zshrc-style imports.
-- [x] **Prompt redesign (v0.1.45)**: two-line segment prompt with git status, language detection, execution timer, exit badge, SSH detection, root mode, path truncation, ANSI-256 palette, and ASCII icon mode.
-- [ ] **Phase 1.3**: Pipelines (`cmd1 | cmd2 | cmd3`).
+- [x] **Prompt redesign (v0.1.45)**: two-line segment prompt with git status, language detection, execution timer, exit badge, SSH detection, root mode, path truncation, ANSI-256 palette, and ASCII icon mode — full design specification in [`PROMPT.md`](PROMPT.md).
+- [x] **Phase 1.3 (v0.2.0)**: Pipelines (`cmd1 | cmd2 | cmd3`).
+  - Concurrent stage execution over std-only OS pipes, built-ins at any stage position via worker threads, per-stage aliases and redirections, bash status semantics (last stage wins), and clean draining when a command is missing mid-chain. `|&`, `>|`, and pipeline negation are deferred.
+- [ ] **Phase 1.4**: Command sequencing and conditional execution (`;`, `&&`, `||`).
 - [ ] **Phase 2.0**: Job control, signal handling (`SIGINT`, `SIGTSTP`), persistent history file.
 
 ## License

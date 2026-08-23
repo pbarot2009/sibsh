@@ -8,14 +8,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- **Phase 1.3** — Pipelines (`cmd1 | cmd2 | cmd3`) with concurrent stage execution.
-  See [CHECKLISTS.md → Phase 1.3](CHECKLISTS.md#13--pipelines-next-phase-planned-for-v020).
 - **Phase 1.4** — Command sequencing and conditional execution (`;`, `&&`, `||`).
   See [CHECKLISTS.md → Phase 1.4](CHECKLISTS.md#14--command-sequencing--conditional-execution-planned-v02x).
 - **Phase 1.5** — Filename expansion (globbing) and tilde expansion.
   See [CHECKLISTS.md → Phase 1.5](CHECKLISTS.md#15--filename-expansion-globbing--tilde-expansion-planned-v030).
 - **Phase 2.0** — Job control, signal handling (`SIGINT`, `SIGTSTP`),
   persistent history file.
+
+## [0.2.1] - 2026-08-23
+
+Resize survival for the line editor, plus the fix for duplicated prompt
+frames while typing.
+
+### Fixed
+
+- **Duplicated prompt frames while typing**: the editor cached the terminal
+  width once per prompt and trusted a remembered row count. After a window
+  resize (or when a long line scrolled the screen), that geometry went stale
+  and repaints anchored at the wrong row, stacking duplicate prompts. The
+  painter now re-queries the terminal size before every paint and re-measures
+  its region whenever the width changed.
+- **Screen resize mid-line now preserves all state**: on the next keystroke
+  after a resize the editor redraws exactly once under the new geometry with
+  the typed buffer, cursor position, history position, saved live line, and
+  pending completion candidates fully intact.
+- **Repaints clamp to the viewport**: when the render is taller than the
+  screen (long input forces scrolling), the cursor can no longer be moved past
+  the top row into scrollback; the visible screen is cleared and rewritten
+  instead of leaving frame debris.
+- `stty` stderr noise (`Inappropriate ioctl for device`) no longer leaks into
+  output when stdin is not a terminal (piped scripts, tests).
+
+### Changed
+
+- New `src/tty.rs` module: terminal size via `ioctl(TIOCGWINSZ)` declared
+  directly against the platform libc — still zero external crates. Replaces
+  one `stty size` process spawn per query; the editor now pays a single
+  syscall per keystroke instead of a fork/exec, making prompt rendering
+  faster as well as resize-correct. Falls back to parsing `stty size`, then
+  to 24×80.
+- `tests/pty_harness.py` grew to 26 interactive scenarios: the mini terminal
+  emulator now tracks soft (wrap) vs hard (newline) line breaks and re-flows
+  its grid on window resizes like a real terminal, replaying output and
+  resizes chronologically. New scenarios cover shrinking and growing the
+  window mid-typing, rapid successive resizes with an empty buffer, and input
+  longer than the screen height. Verified against the v0.1.46 binary: the old
+  build fails the frame-stability checks, the new build passes every
+  scenario.
+- Test coverage grew to 168 tests: 103 unit + 65 integration.
+
+## [0.2.0] - 2026-08-23
+
+Phase 1.3 — Pipelines.
+
+### Added
+- **Pipelines** (`cmd1 | cmd2 | cmd3`), std-only:
+  - Stages run concurrently: external commands are spawned as processes
+    chained through OS pipes created with `std::io::pipe`; all stages launch
+    before any is reaped.
+  - Built-ins work at any stage position (`history | grep cd`,
+    `sort < f | cat`): each builtin stage runs in a dedicated worker thread
+    against a snapshot of the shell state, so pipeline members cannot mutate
+    the interactive shell (bash subshell semantics).
+  - The pipeline's exit status is the last stage's status, matching bash;
+    the prompt badge and `$?` expansion reflect it.
+  - Unknown commands mid-pipeline report an error (stage status 127) while
+    the pipeline still drains: later stages run, upstream writers hit EPIPE,
+    downstream readers see EOF.
+  - Redirections bind tighter than pipes, like bash: `echo hi > f | cat`
+    writes the file and gives `cat` immediate EOF; a stage with its own
+    `< file` stdin drops the pipe read end so upstream writers hit EPIPE.
+  - Alias expansion applies to the first word of every stage.
+- New syntax errors with bash-like messages: leading `|` ("unexpected '|'"),
+  trailing or doubled `|` ("expected command after '|'"), and an explicit
+  rejection of `||` (reserved for Phase 1.4). A pipe cutting short a
+  redirect filename (`echo > | cat`) is a redirection syntax error.
+- `src/pipeline.rs`: dedicated pipeline execution module documenting the
+  concurrency model; `src/executor.rs` gained `StdinSource`/`StdoutSink`
+  stream abstractions over files and pipe ends plus a non-waiting
+  `Executor::spawn`; `help` output documents pipeline syntax.
+- Prompt design specification document ([PROMPT.md](PROMPT.md)): visual
+  architecture, all operational states, glyph mapping table, and ANSI color
+  palette reference.
+
+### Changed
+- `Parser::parse` now returns one `ParsedCommand` per pipeline stage
+  (`Vec<ParsedCommand>`); single-command lines yield exactly one element and
+  behave identically to v0.1.46.
+- Built-in execution is routed through explicit I/O streams (reader/writer
+  handles) instead of assuming stdout/stdin, enabling redirection, pipes,
+  and worker threads through one code path.
+- Test coverage grew to 164 tests: 99 unit (parser, config parser,
+  completion, prompt) and 65 integration tests driving the real binary,
+  including the full Phase 1.3 matrix, stress chains (9 stages / 8 pipes,
+  256 KiB transfers), and PTY harness scenarios.
 
 ## [0.1.46] - 2026-08-23
 
@@ -208,7 +294,9 @@ Phase 1.2 — I/O Redirection.
   - `history`, `touch`, `cat`, `true`, `false`
 - Graceful exit on EOF (Ctrl+D) and custom exit status propagation.
 
-[Unreleased]: https://github.com/pbarot2009/sibsh/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/pbarot2009/sibsh/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/pbarot2009/sibsh/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/pbarot2009/sibsh/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/pbarot2009/sibsh/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/pbarot2009/sibsh/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/pbarot2009/sibsh/compare/v0.1.0...v0.1.1

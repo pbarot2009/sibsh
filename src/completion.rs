@@ -5,6 +5,7 @@
 
 use crate::builtins::Builtins;
 use crate::config::expand_tilde;
+use crate::tty;
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -192,8 +193,12 @@ pub fn read_line(
 }
 
 fn stty(args: &[&str]) -> bool {
+    use std::process::Stdio;
+    // Failure (non-terminal stdin) is expected and handled by the caller;
+    // keep `stty`'s own stderr out of the user's output.
     Command::new("stty")
         .args(args)
+        .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
 }
@@ -251,18 +256,12 @@ fn char_width(ch: char) -> usize {
     }
 }
 
-/// Terminal width from `stty size`; falls back to 80 columns when the
-/// query fails (non-TTY callers never reach raw mode anyway).
-fn terminal_width() -> usize {
-    let Ok(output) = Command::new("stty").arg("size").output() else {
-        return 80;
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    text.split_whitespace()
-        .nth(1)
-        .and_then(|cols| cols.parse().ok())
-        .filter(|cols| *cols > 0)
-        .unwrap_or(80)
+/// Rows the repaint must move the cursor up: over every row of the previous
+/// render (edit area plus any candidate listing below it), clamped so a
+/// render taller than the screen — which has already scrolled — cannot walk
+/// past the top row.
+fn up_rows(base_rows: usize, extra_rows: usize, screen_rows: usize) -> usize {
+    (base_rows.saturating_sub(1) + extra_rows).min(screen_rows.saturating_sub(1))
 }
 
 /// Number of screen rows the render occupies when drawn from column 0 of a
@@ -296,35 +295,56 @@ fn render_rows(prompt: &str, line: &str, term_cols: usize) -> usize {
     rows
 }
 
-/// Owns everything needed to repaint the editing area: the prompt text,
-/// the terminal width, and how many screen rows the previous render
-/// occupied (including wrapped rows). Repainting moves the cursor to the
-/// top row of the previous render, clears to the end of the screen, and
-/// rewrites everything — so wrapping, long lines, history swaps, and
-/// candidate lists can never leave stale fragments behind.
+/// Owns everything needed to repaint the editing area: the prompt text, the
+/// terminal width, and the geometry of the previous render. Repainting moves
+/// the cursor to the top row of the previous render, clears to the end of
+/// the screen, and rewrites everything — so wrapping, long lines, history
+/// swaps, and candidate lists can never leave stale fragments behind.
+///
+/// The terminal size is re-queried before every paint (a single syscall), so
+/// a window resize is detected on the next keystroke: the editor re-measures
+/// the region under the new width and redraws with the edited line, cursor
+/// position, history state, and pending completions fully preserved.
 struct Painter {
     prompt: String,
     term_cols: usize,
-    /// Rows of the most recent paint, measured from its top row down to
-    /// and including the row the cursor currently sits on.
-    last_rows: usize,
+    /// Screen rows occupied by the current render (prompt + edited line,
+    /// including wrapped rows), measured down to the row holding the cursor.
+    base_rows: usize,
+    /// Rows appended *below* the edit area since the last full repaint
+    /// (completion candidate listings). Cleared together with the next paint.
+    extra_rows: usize,
+    /// The line content as of the last paint, used to re-measure the region
+    /// after a resize re-flowed the screen under a new width.
+    last_line: String,
 }
 
 impl Painter {
     fn new(prompt: &str, out: &mut impl Write) -> io::Result<Self> {
-        let term_cols = terminal_width();
+        let term_cols = tty::terminal_width();
         write!(out, "{}", crlf(prompt))?;
         out.flush()?;
         Ok(Self {
             prompt: prompt.to_string(),
             term_cols,
-            last_rows: render_rows(prompt, "", term_cols),
+            base_rows: render_rows(prompt, "", term_cols),
+            extra_rows: 0,
+            last_line: String::new(),
         })
     }
 
     fn repaint(&mut self, out: &mut impl Write, chars: &[char], cursor: usize) -> io::Result<()> {
         let line: String = chars.iter().collect();
-        let up = self.last_rows.saturating_sub(1);
+        let (screen_rows, cols) = tty::terminal_size();
+        if cols != self.term_cols {
+            // The window was resized: the terminal has already re-flowed the
+            // previous render under the new width, so the remembered row
+            // count is wrong. Re-measure it for the same content, keeping
+            // whatever candidate rows still sit below the edit area.
+            self.term_cols = cols;
+            self.base_rows = render_rows(&self.prompt, &self.last_line, cols);
+        }
+        let up = up_rows(self.base_rows, self.extra_rows, screen_rows);
         if up > 0 {
             write!(out, "\x1b[{up}A")?;
         }
@@ -335,7 +355,9 @@ impl Painter {
         if behind > 0 {
             write!(out, "\x1b[{behind}D")?;
         }
-        self.last_rows = render_rows(&self.prompt.clone(), &line, self.term_cols);
+        self.base_rows = render_rows(&self.prompt, &line, self.term_cols);
+        self.extra_rows = 0;
+        self.last_line = line;
         out.flush()
     }
 }
@@ -348,7 +370,7 @@ fn crlf(text: &str) -> String {
 }
 
 fn print_candidates(out: &mut impl Write, candidates: &[String]) -> io::Result<usize> {
-    let term_cols = terminal_width();
+    let term_cols = tty::terminal_width();
     let longest = candidates
         .iter()
         .map(|c| display_width(c))
@@ -396,7 +418,7 @@ fn handle_tab(
         let rows = print_candidates(out, &completion.candidates)?;
         // The candidate list extends the area that the next repaint must
         // clear.
-        painter.last_rows += rows;
+        painter.extra_rows += rows;
         painter.repaint(out, chars, *cursor)?;
     } else {
         *last_was_tab = true;
@@ -828,5 +850,39 @@ mod tests {
         assert_eq!(crlf("a\nb"), "a\r\nb");
         assert_eq!(crlf("plain"), "plain");
         assert_eq!(crlf("\n"), "\r\n");
+    }
+
+    #[test]
+    fn up_rows_covers_previous_render_and_candidates() {
+        // Two-row render, nothing extra: move up one.
+        assert_eq!(up_rows(2, 0, 40), 1);
+        // Candidate listing adds its rows.
+        assert_eq!(up_rows(2, 5, 40), 6);
+        // Single-row render never moves up.
+        assert_eq!(up_rows(1, 0, 40), 0);
+        // Degenerate zero-row state stays at 0 (saturating).
+        assert_eq!(up_rows(0, 0, 40), 0);
+    }
+
+    #[test]
+    fn up_rows_never_walks_past_the_top_of_the_screen() {
+        // A render taller than the screen has already scrolled; clamping to
+        // screen_rows - 1 lands on row 0 instead of escaping into scrollback.
+        assert_eq!(up_rows(50, 0, 24), 23);
+        assert_eq!(up_rows(10, 20, 8), 7);
+        // One-row screen can never move up.
+        assert_eq!(up_rows(9, 9, 1), 0);
+    }
+
+    #[test]
+    fn render_rows_remeasures_content_after_resize() {
+        // The same content measured under a narrow width occupies more rows;
+        // this is exactly what Painter recomputes when it detects a resize.
+        let prompt = "top\n❯ ";
+        let line = "z".repeat(60);
+        let wide = render_rows(prompt, &line, 80);
+        let narrow = render_rows(prompt, &line, 30);
+        assert_eq!(wide, 2);
+        assert!(narrow > wide);
     }
 }

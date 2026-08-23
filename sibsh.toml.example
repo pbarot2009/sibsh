@@ -14,17 +14,43 @@
 # a missing or invalid file never stops the shell from starting.
 
 # ------------------------------------------------------------------
-# prompt: custom prompt text. Available placeholders:
+# prompt: custom prompt text. Setting this REPLACES the built-in
+#   two-line segment prompt with your own single-line template.
+#   Available placeholders:
 #   {user}   your username          {host}  machine hostname
 #   {cwd}    current directory      {status} last exit code (0 on success)
-# Default (when this line is removed):
-#   "{user}@{host}:{cwd} ❯ " with colors and a red [status] on failure
+#   {branch} git branch name, empty outside a repository
+# Default (when this line is removed): the two-line segment prompt
+#
+#   ╭─ [sibsh] ~/code/project on  main [⇡2 ⇣1 !3 ?1] via  rs [3.42s ]
+#   ╰─❯
+#
+#   Segments appear only when relevant: user@host only over SSH,
+#   git only inside a repository, timer only after commands slower
+#   than 2s, exit badge only on failure, and root mode (UID 0) shows
+#   `#` and drops the rest.
 #
 # Examples:
 #   prompt = "sibsh {cwd} $ "
 #   prompt = "[{status}] {user}:{cwd} > "
 # ------------------------------------------------------------------
 #prompt = "{user}@{host}:{cwd} ❯ "
+
+# ------------------------------------------------------------------
+# icons: glyph set for the built-in prompt.
+#   "ascii" uses plain fallbacks: +- frame, > pointer, git: prefix,
+#           ^ / v for ahead/behind, rs / go / c language tags.
+#   Remove the line (or any other value) for Nerd Font symbols:
+#           ╭─ ╰─ frames, ❯ ❭ pointers,  branch icon, ⇡ ⇣ sync flags.
+# ------------------------------------------------------------------
+#icons = "ascii"
+
+# ------------------------------------------------------------------
+# git_status: set false to hide the `on  branch [flags]` segment.
+# This also skips the git subprocess that runs at every prompt, which
+# helps in very large repositories or non-git directories.
+# ------------------------------------------------------------------
+#git_status = true
 
 # ------------------------------------------------------------------
 # history_limit: maximum number of commands kept in memory this session.

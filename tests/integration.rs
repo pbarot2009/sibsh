@@ -16,6 +16,13 @@ fn run_shell_with(script: &str, extra_env: &[(&str, &str)]) -> (String, i32) {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        // Pin identity/remote vars so the prompt is identical everywhere
+        // (CI runners have different usernames; some environments export
+        // SSH variables that would add a user@host segment; root sandboxes
+        // would switch the prompt into root mode).
+        .env_remove("SSH_TTY")
+        .env_remove("SSH_CONNECTION")
+        .env("SIBSH_FORCE_NON_ROOT", "1")
         .envs(extra_env.iter().copied())
         .spawn()
         .expect("failed to spawn sibsh");
@@ -48,11 +55,19 @@ fn visible_lines(output: &str) -> Vec<String> {
     }
     plain
         .lines()
-        .map(|line| match line.rsplit_once('❯') {
-            // Keep only what follows the prompt marker; continuation lines
-            // of multi-line output have no marker and are kept verbatim.
-            Some((_, rest)) => rest.trim(),
-            None => line,
+        // The two-line prompt's top frame line carries no pointer marker,
+        // so it would look like command output; drop it explicitly.
+        .filter(|line| !(line.starts_with('\u{256d}') || line.starts_with("+-")))
+        .map(|line| {
+            match line
+                .rsplit_once('\u{276f}')
+                .or_else(|| line.rsplit_once('\u{276d}'))
+            {
+                // Keep only what follows the prompt marker; continuation lines
+                // of multi-line output have no marker and are kept verbatim.
+                Some((_, rest)) => rest.trim(),
+                None => line,
+            }
         })
         .filter(|rest| !rest.is_empty())
         .map(str::to_string)
@@ -164,21 +179,30 @@ fn matrix_9_missing_input_file_errors_and_skips_command() {
     let (out, code) = run_shell(&format!("cat < {f}\ntrue\n"));
     assert_eq!(code, 0);
     // The failure must be visible in the next prompt's status indicator.
-    assert!(plain_text(&out).contains("[1]"), "expected [1] in: {out}");
+    assert!(
+        plain_text(&out).contains("[1 \u{2718}]"),
+        "expected [1 ✘] badge in: {out}"
+    );
 }
 
 #[test]
 fn matrix_10_unwritable_target_errors() {
     let (out, code) = run_shell("echo hi > /nonexistent_dir_xyz/f.txt\ntrue\n");
     assert_eq!(code, 0);
-    assert!(plain_text(&out).contains("[1]"), "expected [1] in: {out}");
+    assert!(
+        plain_text(&out).contains("[1 \u{2718}]"),
+        "expected [1 ✘] badge in: {out}"
+    );
 }
 
 #[test]
 fn matrix_11_missing_filename_is_syntax_error() {
     let (out, code) = run_shell("echo hi >\ntrue\n");
     assert_eq!(code, 0);
-    assert!(plain_text(&out).contains("[1]"), "expected [1] in: {out}");
+    assert!(
+        plain_text(&out).contains("[1 \u{2718}]"),
+        "expected [1 ✘] badge in: {out}"
+    );
 }
 
 #[test]
@@ -313,10 +337,10 @@ fn runtime_alias_define_list_remove() {
     let lines = visible_lines(&out);
     assert!(lines.contains(&"listed".to_string()));
     assert!(lines.iter().any(|l| l.contains("ll='echo listed'")));
-    // unalias of an unknown name is an error -> [1] status marker.
+    // unalias of an unknown name is an error -> failure badge in next prompt.
     assert!(
-        plain_text(&out).contains("[1]"),
-        "expected [1] after bad unalias"
+        plain_text(&out).contains("[1 \u{2718}]"),
+        "expected failure badge after bad unalias"
     );
 }
 
@@ -367,14 +391,13 @@ fn missing_config_file_starts_normally() {
 
 #[test]
 fn echo_n_suppresses_trailing_newline() {
-    // Pin USER so the prompt text is identical on every machine (CI runners
-    // use a different username, e.g. "runner").
-    let (out, code) = run_shell_with("echo -n hello\necho done\n", &[("USER", "ciuser")]);
+    let (out, code) = run_shell("echo -n hello\necho done\n");
     assert_eq!(code, 0);
-    // Without -n, `hello` and the next prompt would be on separate lines.
+    // Without -n, `hello` and the next prompt's top frame would be on
+    // separate lines; with -n they are glued together on one line.
     assert!(
-        plain_text(&out).contains("hellociuser"),
-        "no-newline output joins next prompt: {out}"
+        plain_text(&out).contains("hello\u{256d}"),
+        "no-newline output joins next prompt frame: {out}"
     );
 }
 
@@ -422,7 +445,7 @@ fn which_prints_path_or_fails_cleanly() {
         "{out}"
     );
     assert!(
-        plain_text(&out).contains("[1]"),
+        plain_text(&out).contains("[1 \u{2718}]"),
         "unknown command must set status 1"
     );
 }
@@ -471,7 +494,10 @@ fn cat_missing_file_sets_error_status() {
     let f = tmpfile("does_not_exist_abc.txt");
     let (out, code) = run_shell(&format!("cat {f}\ntrue\n"));
     assert_eq!(code, 0);
-    assert!(plain_text(&out).contains("[1]"), "expected [1]: {out}");
+    assert!(
+        plain_text(&out).contains("[1 \u{2718}]"),
+        "expected badge: {out}"
+    );
 }
 
 #[test]
@@ -526,4 +552,145 @@ fn history_records_every_command() {
     assert!(contents.contains("echo one"), "{contents}");
     assert!(contents.contains("echo two"), "{contents}");
     cleanup!(f);
+}
+
+// ---- Two-line prompt rendering ----
+
+#[test]
+fn prompt_renders_two_line_frame_with_brand() {
+    let (out, code) = run_shell("true\n");
+    assert_eq!(code, 0);
+    let plain = plain_text(&out);
+    assert!(plain.contains("[sibsh]"), "brand badge: {plain:?}");
+    assert!(plain.contains('\u{256d}'), "top connector");
+    assert!(plain.contains('\u{2570}'), "bottom connector");
+}
+
+#[test]
+fn prompt_failure_shows_exit_badge_and_error_pointer() {
+    let (out, code) = run_shell("false\ntrue\n");
+    assert_eq!(code, 0);
+    let plain = plain_text(&out);
+    assert!(plain.contains("[1 \u{2718}]"), "badge: {plain:?}");
+    assert!(plain.contains('\u{276d}'), "error pointer ❭ expected");
+    // The success pointer must also appear (after the following `true`).
+    assert!(plain.contains('\u{276f}'));
+}
+
+#[test]
+fn prompt_hides_user_host_without_ssh_vars() {
+    let (out, _) = run_shell_with("true\n", &[("USER", "ciuser"), ("HOSTNAME", "cihost")]);
+    let plain = plain_text(&out);
+    assert!(
+        !plain.contains("ciuser@"),
+        "no user@host locally: {plain:?}"
+    );
+}
+
+#[test]
+fn prompt_shows_user_host_only_over_ssh() {
+    // The host part comes from /etc/hostname, so only the username side is
+    // asserted here.
+    let (out, _) = run_shell_with("true\n", &[("USER", "ciuser"), ("SSH_TTY", "/dev/pts/0")]);
+    let plain = plain_text(&out);
+    assert!(
+        plain.contains("ciuser@"),
+        "ssh session shows user@host: {plain:?}"
+    );
+}
+
+#[test]
+fn prompt_ascii_icons_via_config() {
+    let config = tmpfile("cfg_ascii.toml");
+    fs::write(&config, "icons = \"ascii\"\ngit_status = false\n").unwrap();
+    let (out, code) = run_shell_with("true\nexit\n", &[("SIBSH_CONFIG", config.as_str())]);
+    assert_eq!(code, 0);
+    let plain = plain_text(&out);
+    assert!(plain.contains("+-"), "ascii frame: {plain:?}");
+    assert!(plain.contains("> "), "ascii pointer: {plain:?}");
+    assert!(
+        !plain.contains('\u{256d}'),
+        "no unicode frame in ascii mode"
+    );
+    cleanup!(config);
+}
+
+#[test]
+fn prompt_git_branch_segment_in_repository() {
+    use std::io::Write as _;
+
+    let dir = std::env::temp_dir().join(format!("sibsh_git_{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let init = Command::new("git")
+        .args(["init", "-q", "-b", "sibsh-test"])
+        .current_dir(&dir)
+        .status()
+        .expect("git available for this test");
+    assert!(init.success(), "git init must succeed");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sibsh"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("SSH_TTY")
+        .env_remove("SSH_CONNECTION")
+        .env("SIBSH_FORCE_NON_ROOT", "1")
+        .current_dir(&dir)
+        .spawn()
+        .expect("spawn sibsh");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"true\nexit\n")
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let plain = plain_text(&String::from_utf8_lossy(&output.stdout));
+
+    assert!(plain.contains("on \u{f418}sibsh-test"), "branch: {plain:?}");
+
+    // Untracked file -> ?1 flag.
+    fs::write(dir.join("stray.txt"), "x").unwrap();
+    let (out, _) = run_shell_in(&dir, "true\nexit\n");
+    let plain = plain_text(&out);
+    assert!(plain.contains("?1"), "untracked flag: {plain:?}");
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn prompt_duration_timer_after_long_command() {
+    let (out, code) = run_shell("sleep 2.3\ntrue\n");
+    assert_eq!(code, 0);
+    let plain = plain_text(&out);
+    assert!(plain.contains('\u{f0150}'), "clock glyph: {plain:?}");
+    assert!(plain.contains("2."), "seconds value: {plain:?}");
+}
+
+/// Runs a shell script with `dir` as the working directory.
+fn run_shell_in(dir: &std::path::Path, script: &str) -> (String, i32) {
+    use std::io::Write;
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sibsh"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_remove("SSH_TTY")
+        .env_remove("SSH_CONNECTION")
+        .env("SIBSH_FORCE_NON_ROOT", "1")
+        .current_dir(dir)
+        .spawn()
+        .expect("failed to spawn sibsh");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(script.as_bytes())
+        .expect("failed to write script");
+    let output = child.wait_with_output().expect("failed to wait");
+    (
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        output.status.code().unwrap_or(-1),
+    )
 }

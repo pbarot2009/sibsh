@@ -7,7 +7,8 @@ The goal is to build a fast, reliable shell from scratch using only the Rust sta
 ## Features (Phase 1.2 + additions)
 
 - **Zero External Dependencies**: Built entirely using Rust standard library (`std`).
-- **Interactive REPL**: Read-Eval-Print loop with custom prompt, error status display, and EOF handling.
+- **Interactive REPL**: Read-Eval-Print loop with a two-line segment prompt, error status display, and EOF handling.
+- **Segment Prompt**: `╭─ [sibsh] ~/code/project on  main [⇡2 ⇣1 !3 ?1] via  rs [3.42s ]` over a `╰─❯` input line — git branch and dirty flags, SSH-only `user@host`, language detection (rs/go/c), 2-second execution timer, `[127 ✘]` exit badge with red pointer, root-mode `#`, deep-path truncation to `…/`, fixed ANSI-256 palette, and an `icons = "ascii"` fallback mode.
 - **Command Parser**: Supports single quotes (`'...'`), double quotes (`"..."`), escape characters, and environment variable expansion (`$VAR`, `$?`).
 - **I/O Redirection**: `cmd > file` (create/truncate), `cmd >> file` (append), and `cmd < file` (stdin) — for external commands **and** built-ins, with quote-aware parsing so `echo 'a > b'` stays literal.
 - **Tab Completion**: First Tab completes built-ins, aliases, `$PATH` executables, and file paths; a second Tab lists all candidates. Includes line editing (arrows, Home/End, backspace) and Up/Down history navigation.
@@ -137,8 +138,11 @@ While typing you can also use: Backspace/Delete, Left/Right arrows, Home/End (Ct
 sibsh reads `$SIBSH_CONFIG` or, by default, `~/.sibsh/sibsh.toml` at startup:
 
 ```toml
-prompt = "{user}@{host}:{cwd} ❯ "   # placeholders: {user}, {host}, {cwd}, {status}
-history_limit = 1000               # cap on in-memory history
+# prompt = "{user}@{host}:{cwd} ❯" # custom single-line template;
+                                    # placeholders: {user} {host} {cwd} {status} {branch}
+icons = "ascii"                     # plain glyphs instead of Nerd Font symbols
+git_status = true                   # false hides the git segment (and skips git subprocess)
+history_limit = 1000                # cap on in-memory history
 imports = ["~/.bashrc", "~/.zshrc"] # shell files run at startup
 
 [aliases]
@@ -158,6 +162,7 @@ On first run sibsh writes a fully commented template to `~/.sibsh/sibsh.toml` ex
 - [x] **Phase 1.2**: I/O Redirection (`>`, `>>`, `<`) for external commands and built-ins.
   - Quote-aware parsing (`echo 'a > b'` is literal), attached (`>file`) and spaced (`> file`) forms, `$VAR` expansion inside filenames, clear errors for missing filenames or unreadable/unwritable targets, and byte-safe `cat`.
 - [x] **Additions (v0.1.3)**: Tab completion with line editing and history navigation; `~/.sibsh/sibsh.toml` configuration (prompt template, history limit); aliases (`alias`/`unalias`) with bashrc/zshrc-style imports.
+- [x] **Prompt redesign (v0.1.45)**: two-line segment prompt with git status, language detection, execution timer, exit badge, SSH detection, root mode, path truncation, ANSI-256 palette, and ASCII icon mode.
 - [ ] **Phase 1.3**: Pipelines (`cmd1 | cmd2 | cmd3`).
 - [ ] **Phase 2.0**: Job control, signal handling (`SIGINT`, `SIGTSTP`), persistent history file.
 

@@ -4,14 +4,17 @@ use crate::config::{self, Config};
 use crate::error::{ShellError, ShellResult};
 use crate::executor::{Executor, RedirectHandles};
 use crate::parser::Parser;
-use crate::prompt::Prompt;
+use crate::prompt::{self, IconMode, Prompt, PromptCtx};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::time::Instant;
 
 pub struct ShellState {
     pub history: Vec<String>,
     pub last_status: i32,
+    /// Wall-clock time of the most recent command; feeds the prompt timer.
+    pub last_duration: Option<std::time::Duration>,
     pub old_pwd: Option<PathBuf>,
     pub running: bool,
     /// Loaded from `~/.sibsh/sibsh.toml`.
@@ -26,6 +29,7 @@ impl ShellState {
         Self {
             history: Vec::new(),
             last_status: 0,
+            last_duration: None,
             old_pwd: None,
             running: true,
             config,
@@ -67,7 +71,16 @@ impl ShellState {
             // 1. Render the prompt text. Like zsh's ZLE and fish, the line
             //    reader is the only place that paints it on screen: printing
             //    here as well would show two prompts on one line.
-            let prompt = Prompt::render_with(self.config.prompt.as_deref(), self.last_status);
+            let prompt = {
+                let ctx = PromptCtx {
+                    last_status: self.last_status,
+                    last_duration: self.last_duration,
+                    icons: IconMode::from_config(self.config.icons.as_deref()),
+                    git_enabled: self.config.git_status,
+                    root: prompt::is_root(),
+                };
+                Prompt::render_auto(self.config.prompt.as_deref(), &ctx)
+            };
 
             // 2. Read user input with tab completion and history navigation.
             let line = match completion::read_line(&prompt, &self.history, &self.aliases) {
@@ -97,7 +110,8 @@ impl ShellState {
                 self.history.drain(..excess);
             }
 
-            // 4. Dispatch line
+            // 4. Dispatch line and record how long it took for the timer.
+            let started = Instant::now();
             match self.dispatch_line(trimmed) {
                 Ok(code) => self.last_status = code,
                 Err(ShellError::Exit(code)) => return code,
@@ -106,6 +120,7 @@ impl ShellState {
                     self.last_status = 1;
                 }
             }
+            self.last_duration = Some(started.elapsed());
         }
 
         self.last_status

@@ -15,8 +15,20 @@
    Palette: terminal black, phosphor green, amber, oxblood, bone.
    ================================================================ */
 
+/* Self-hosted, subsetted Nerd Font glyphs (git-branch + clock icons only).
+   Embedded as base64 so these two prompt glyphs render identically on every
+   device with zero external font requests and no fallback-font metric bugs. */
+@font-face {
+  font-family: "sibsh Nerd Font Subset";
+  src: url(data:font/woff2;base64,d09GMgABAAAAAAQcAAwAAAAABswAAAPPAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAABmAAbAgEEQgKhUyFGAE2AiQDEgsOAAQgBYJiB1gbtQVRlC7KCoCfCfEYp2mBSFD6GV154IuaQGQniMDu39nzlxjA7uJOJaCnwDxE5ZolU5vxQfCVkTy1tmA6VS2SrJ00xDSZ71KSafRs+qIhMt8hfzYfuJ/pIgqbBiBvkW37tumaymSAkRiJhXdUfkBpc4lRFtbGalSOg742j0CzkJXooJfom0Dix3rVTf8Eg4LuxWAF42lsbHn1+sqxr5G2bfT/3x/PONkMCCWXSILIqi/VJupSEUyq4i3WSKzV0BDIat3FfN5mpPqKM5EGhWFdjdAIkJaXgU7dBgFi2ygAGBnenA/gBmkLAGhAPgUABQ1V04IrVLEsKyTa8JkSMKm3n5fvlFMOMJjpXOIWMWWWy3tk+GJHpsPDTOcQ+yxxw6+adbv9Xigu1j5JZjoEiNNV4Cy5O2w5EEtMmeV2L2mptsy8Xf58L+pdfHnMrf2pKm4fn4AXw5P8PfO6UZzlWrwmDFK35Oasn4uvocVJSzq450lz2rseL33Y1jG7nXMOTlnydT77qGa3dTwNei91Q4LqLJ7zhUzrpPVrO1qvi94ucd3qTp2Nlzfm13je/1qHTtWVF1KjU6fppVRDXijWjaqn/ChMxtaOFw2ZCCXzSfgt/zzacXL0DYfwjp0YMx6NfsbvcO4Hxylihpg1Y7ejTf3UoIXhMwO81+E2TxcIrt7h0A6CDA7fxu+pUWiHjoRmp1md27c7HRbLdo62O1aZB3nePqHZtFdUiVjbImMoCfbEWLQOreMkVmzh8TpiyXYyIEgN4xWKUryT5Q83dv3vUhP11sQ82/ckbBbq+d+1YUvcxe5qYxuoybW7h4efkslT+rxd1Kkz+DrBcCYRVPhcx76J5C4/d7TpQcPnNT6ku1QrOkxAgL/0QX6z8PWChW8XvQk/d1/58y/6clCzWbT6AzwAYJ9QsP2mxrvifYZ+V9iqgkZRKToISUP+Nqq8ngAC2T9rj4Cq3ywfCwBHn2vTAZ7vu7PFnvc/w5pi+gIWCgACv7SgBYNlz+/unwdAtaAuwAKYzWpAAMOnPXMBUABBgJryAYBJZyqieQG1YRuEXLUNCv4MN6hUNLVf4xl0ajr48gahvqpjhJEmGW2QAQYaK1GmPrIkKlaoSLlciVqbpJfhEjXTRyPDjY18Rj9tTDJMbyMMNUai5voZra9E9Y0w3Fg1W9/dCK31M8A4Q/UyOhplXol8ZfIVac/NjDFIoa7CWVckX+GoKrkGxuTo9W7ov6yvGQUAbKE/EKYDDEBQRBFVNK9B/frk/Wc3+o/oMzZvwKCxPQ7WSuCwvnlHvK/HQQQ=) format("woff2");
+  font-display: block;
+  font-weight: 400;
+  font-style: normal;
+  unicode-range: U+F418, U+F0150;
+}
+
 :root {
-  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --font-mono: 'sibsh Nerd Font Subset', 'JetBrains Mono', 'Courier New', monospace;
   --font-display: 'Newsreader', 'Georgia', serif;
 
   --bg: #0e0d0b;
@@ -383,18 +395,18 @@ h1.hero-title .accent-2 { font-style: italic; color: var(--amber); }
   min-width: 0;
   max-width: 100%;
 }
-.terminal-body .line, .state-body .line { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.terminal-body .line, .state-body .line { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; line-height: 1.6; }
 .terminal-body .prompt-top, .state-body .prompt-top,
 .terminal-body .prompt-bottom, .state-body .prompt-bottom { color: #8a8a8a; }
 .terminal-body .prompt-brand, .state-body .prompt-brand { color: #b18ae0; font-weight: 700; }
 .terminal-body .prompt-cwd, .state-body .prompt-cwd { color: #5fadf2; font-weight: 700; }
 .terminal-body .prompt-on, .state-body .prompt-on { color: #8a8a8a; }
-.terminal-body .prompt-git-icon, .state-body .prompt-git-icon { color: #f5879b; }
+.terminal-body .prompt-git-icon, .state-body .prompt-git-icon { color: #f5879b; line-height: 1; }
 .terminal-body .prompt-branch, .state-body .prompt-branch { color: #f5879b; }
 .terminal-body .prompt-flags, .state-body .prompt-flags { color: #ffad33; font-weight: 700; }
 .terminal-body .prompt-via, .state-body .prompt-via { color: #8a8a8a; }
 .terminal-body .prompt-lang, .state-body .prompt-lang { color: #87d787; }
-.terminal-body .prompt-timer, .state-body .prompt-timer { color: #fce094; }
+.terminal-body .prompt-timer, .state-body .prompt-timer { color: #fce094; line-height: 1; }
 .terminal-body .prompt-pointer, .state-body .prompt-pointer { color: #87ff87; font-weight: 700; }
 .terminal-body .prompt-pointer-err, .state-body .prompt-pointer-err { color: #ff5f5f; font-weight: 700; }
 .terminal-body .prompt-root, .state-body .prompt-root { color: #d4af37; font-weight: 700; }
@@ -1207,15 +1219,15 @@ footer.site-footer {
             <span>sibsh &mdash; cargo run</span>
           </div>
           <div class="terminal-body">
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#x23F1;]</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#xF0150;]</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">cargo build --release</span></div>
 <div class="line"><span class="out">    Finished `release` profile [optimized] target(s) in 3.42s</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">./target/release/sibsh</span></div>
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[!2 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[!2 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">echo "Hello from $SHELL"</span></div>
 <div class="line"><span class="out">Hello from sibsh</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">false</span></div>
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer-err">&#x276D;</span> <span class="cursor"></span></div>
           </div>
         </div>
@@ -1340,17 +1352,17 @@ footer.site-footer {
           <span>prompt demo</span>
         </div>
         <div class="terminal-body">
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/compiler/parser</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#x23F1;]</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/compiler/parser</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#xF0150;]</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">make test</span></div>
 <div class="line"><span class="out">running 131 tests ...</span></div>
 <div class="line"><span class="out">test result: ok. 131 passed; 0 failed</span></div>
 <div class="line">&nbsp;</div>
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">feature/pipelines</span> <span class="prompt-flags">[!5 ?2]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">feature/pipelines</span> <span class="prompt-flags">[!5 ?2]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">cargo run</span></div>
 <div class="line"><span class="out">    Finished dev [unoptimized] target(s) in 0.42s</span></div>
 <div class="line">&nbsp;</div>
 <div class="line"><span class="comment"># failed command &mdash; red pointer + exit badge, runtime segment dropped</span></div>
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer-err">&#x276D;</span> <span class="cursor"></span></div>
         </div>
       </div>
@@ -1373,7 +1385,7 @@ footer.site-footer {
         <div class="annot-item">
           <span class="annot-swatch s-git"></span>
           <div>
-            <div class="annot-label">&#x2387; main &mdash; Git branch</div>
+            <div class="annot-label">&#xF418; main &mdash; Git branch</div>
             <div class="annot-desc">Current branch from one <code>git status --porcelain -b</code> call per prompt. Hidden outside repositories. Disable with <code>git_status = false</code>.</div>
           </div>
         </div>
@@ -1394,7 +1406,7 @@ footer.site-footer {
         <div class="annot-item">
           <span class="annot-swatch s-timer"></span>
           <div>
-            <div class="annot-label">[3.42s &#x23F1;] &mdash; Execution timer</div>
+            <div class="annot-label">[3.42s &#xF0150;] &mdash; Execution timer</div>
             <div class="annot-desc">Shows only when the previous command took longer than 2 seconds (2000ms).</div>
           </div>
         </div>
@@ -1419,42 +1431,42 @@ footer.site-footer {
       <div class="state-cell">
         <div class="state-label">1 &mdash; Normal clean state</div>
         <div class="state-body">
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">cargo check</span></div>
         </div>
       </div>
       <div class="state-cell">
         <div class="state-label">2 &mdash; Dirty tree &amp; upstream divergence</div>
         <div class="state-body">
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">dev</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">dev</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">git status</span></div>
         </div>
       </div>
       <div class="state-cell">
         <div class="state-label">3 &mdash; Command failure (exit &ne; 0)</div>
         <div class="state-body">
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer-err">&#x276D;</span> <span class="cursor"></span></div>
         </div>
       </div>
       <div class="state-cell">
         <div class="state-label">4 &mdash; Execution timer active (&gt; 2.0s)</div>
         <div class="state-body">
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#x23F1;]</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#xF0150;]</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cursor"></span></div>
         </div>
       </div>
       <div class="state-cell">
         <div class="state-label">5 &mdash; Deep-path truncation</div>
         <div class="state-body">
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/compiler/parser/ast</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/compiler/parser/ast</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cursor"></span></div>
         </div>
       </div>
       <div class="state-cell">
         <div class="state-label">6 &mdash; SSH / remote session</div>
         <div class="state-body">
-<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-user">u0_a457@localhost</span> <span class="prompt-on">in</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-user">u0_a457@localhost</span> <span class="prompt-on">in</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#xF418;</span> <span class="prompt-branch">main</span></div>
 <div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cursor"></span></div>
         </div>
       </div>

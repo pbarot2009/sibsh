@@ -1,0 +1,1972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sibsh — Something Is Better Shell</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+<style>
+/* ================================================================
+   sibsh — Terminal Brutalist Landing
+   Aesthetic: ANSI terminal meets print broadsheet.
+   Solid colors only. No gradients, no blur, no glass.
+   Palette: terminal black, phosphor green, amber, oxblood, bone.
+   ================================================================ */
+
+:root {
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+  --font-display: 'Newsreader', 'Georgia', serif;
+
+  --bg: #0e0d0b;
+  --surface: #161513;
+  --surface-2: #1e1d1a;
+  --surface-3: #262421;
+  --ink: #e8e4d8;
+  --ink-dim: #a8a395;
+  --muted: #928d7d;
+  --border: #3a3833;
+  --border-bright: #524f48;
+
+  --green: #5a9e3f;
+  --green-deep: #3d6b2b;
+  --green-dim: rgba(90, 158, 63, 0.12);
+  --amber: #c89829;
+  --amber-dim: rgba(200, 152, 41, 0.12);
+  --oxblood: #a83333;
+  --oxblood-dim: rgba(168, 51, 51, 0.15);
+  --bone: #e8e4d8;
+  --blue: #4a7ba6;
+  --blue-dim: rgba(74, 123, 166, 0.12);
+  --violet: #a084d6;
+  --violet-dim: rgba(122, 92, 168, 0.12);
+  --sand: #b89968;
+  --sand-dim: rgba(184, 153, 104, 0.12);
+  --orange: #c46e3a;
+  --pink: #a8506e;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f1ea;
+    --surface: #ebe7dc;
+    --surface-2: #e0dccf;
+    --surface-3: #d4d0c2;
+    --ink: #1a1916;
+    --ink-dim: #4a463e;
+    --muted: #5c5748;
+    --border: #c4c0b2;
+    --border-bright: #a8a496;
+
+    --green: #2f5620;
+    --green-deep: #2a4d1e;
+    --green-dim: rgba(61, 107, 43, 0.10);
+    --amber: #6f4c10;
+    --amber-dim: rgba(154, 110, 26, 0.10);
+    --oxblood: #8a2828;
+    --oxblood-dim: rgba(138, 40, 40, 0.08);
+    --bone: #1a1916;
+    --blue: #2e5a85;
+    --blue-dim: rgba(46, 90, 133, 0.08);
+    --violet: #5c428a;
+    --violet-dim: rgba(92, 66, 138, 0.08);
+    --sand: #8a6e3e;
+    --sand-dim: rgba(138, 110, 62, 0.08);
+    --orange: #a04e22;
+    --pink: #8a3a54;
+  }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--green); color: var(--bg); }
+
+/* ---- Container system ---- */
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---- Reusable table skeleton ---- */
+.table-skeleton {
+  width: 100%;
+  border-collapse: collapse;
+  border: 2px solid var(--border-bright);
+}
+.table-skeleton > tbody > tr > td {
+  border: 1px solid var(--border);
+  vertical-align: top;
+}
+
+/* ================================================================
+   HEADER — unique terminal title bar
+   ================================================================ */
+header.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--surface);
+  border-bottom: 2px solid var(--border-bright);
+}
+
+.header-bar {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.header-bar .dots { display: flex; gap: 6px; }
+.header-bar .dot {
+  width: 11px; height: 11px;
+  border: 1px solid var(--border-bright);
+}
+.header-bar .dot.r { background: var(--oxblood); }
+.header-bar .dot.y { background: var(--amber); }
+.header-bar .dot.g { background: var(--green); }
+.header-bar .term-info { font-variant-numeric: tabular-nums; }
+
+.header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+.brand-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px; height: 36px;
+  background: var(--green);
+  color: var(--bg);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 16px;
+  border: 2px solid var(--border-bright);
+}
+.brand-text {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+.brand-text .dim { color: var(--muted); font-weight: 400; }
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+}
+.nav-links a {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  text-decoration: none;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-right: 1px solid var(--border);
+  transition: color 0.1s, background 0.1s;
+}
+.nav-links a:first-child { border-left: 1px solid var(--border); }
+.nav-links a:hover { color: var(--green); background: var(--surface-2); }
+.nav-links a.nav-cta {
+  color: var(--bg);
+  background: var(--green);
+  border-color: var(--green);
+  font-weight: 600;
+}
+.nav-links a.nav-cta:hover { background: var(--green-deep); color: var(--bone); }
+
+/* Mobile menu toggle */
+.menu-toggle {
+  display: none;
+  background: var(--surface-2);
+  border: 2px solid var(--border-bright);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+}
+.menu-toggle:hover { background: var(--surface-3); }
+.menu-toggle:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+
+/* ================================================================
+   HERO
+   ================================================================ */
+.hero {
+  padding: 56px 0 64px;
+  border-bottom: 2px solid var(--border-bright);
+}
+.hero-grid {
+  display: flex;
+  flex-wrap: wrap;
+  border: 2px solid var(--border-bright);
+}
+.hero-grid > * { min-width: 0; box-sizing: border-box; }
+.hero-left { flex: 1 1 55%; }
+.hero-right { flex: 1 1 45%; }
+@supports (display: grid) {
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 0;
+  }
+  .hero-left, .hero-right { flex: none; }
+}
+
+.hero-left {
+  padding: 48px 36px;
+  background: var(--surface);
+  border-right: 2px solid var(--border-bright);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  padding: 4px 10px;
+  margin-bottom: 24px;
+  width: fit-content;
+  background: var(--amber-dim);
+}
+.hero-badge::before {
+  content: '';
+  width: 8px; height: 8px;
+  background: var(--amber);
+  display: inline-block;
+}
+
+h1.hero-title {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5.5vw, 60px);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 20px;
+}
+h1.hero-title .accent { color: var(--green); }
+h1.hero-title .accent-2 { font-style: italic; color: var(--amber); }
+
+.hero-lede {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--ink-dim);
+  max-width: 480px;
+  margin-bottom: 28px;
+}
+.hero-lede .tag {
+  color: var(--violet);
+  font-weight: 600;
+}
+
+.hero-actions { display: flex; flex-wrap: wrap; gap: 0; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 12px 20px;
+  border: 2px solid var(--border-bright);
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--surface-2);
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.btn:hover { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn--primary {
+  background: var(--green);
+  color: var(--bg);
+  border-color: var(--green);
+}
+.btn--primary:hover { background: var(--green-deep); color: var(--bone); border-color: var(--green-deep); }
+.btn + .btn { border-left-width: 0; }
+.btn + .btn:hover { border-left-width: 2px; margin-left: -2px; }
+
+/* Hero right: live terminal */
+.hero-right {
+  padding: 0;
+  background: #0a0908;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.terminal-frame {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.terminal-header {
+  padding: 8px 14px;
+  background: #1a1816;
+  border-bottom: 1px solid #3a3833;
+  font-size: 11px;
+  color: #928d7d;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.terminal-header .tdots { display: flex; gap: 5px; }
+.terminal-header .tdots span {
+  width: 10px; height: 10px;
+  border: 1px solid #3a3833;
+}
+.terminal-header .tdots .r { background: #a83333; }
+.terminal-header .tdots .y { background: #c89829; }
+.terminal-header .tdots .g { background: #5a9e3f; }
+
+.terminal-body {
+  padding: 20px 22px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.75;
+  color: #e8e4d8;
+  flex: 1;
+  overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.terminal-body .line, .state-body .line { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.terminal-body .prompt-top, .state-body .prompt-top,
+.terminal-body .prompt-bottom, .state-body .prompt-bottom { color: #8a8a8a; }
+.terminal-body .prompt-brand, .state-body .prompt-brand { color: #b18ae0; font-weight: 700; }
+.terminal-body .prompt-cwd, .state-body .prompt-cwd { color: #5fadf2; font-weight: 700; }
+.terminal-body .prompt-on, .state-body .prompt-on { color: #8a8a8a; }
+.terminal-body .prompt-git-icon, .state-body .prompt-git-icon { color: #f5879b; }
+.terminal-body .prompt-branch, .state-body .prompt-branch { color: #f5879b; }
+.terminal-body .prompt-flags, .state-body .prompt-flags { color: #ffad33; font-weight: 700; }
+.terminal-body .prompt-via, .state-body .prompt-via { color: #8a8a8a; }
+.terminal-body .prompt-lang, .state-body .prompt-lang { color: #87d787; }
+.terminal-body .prompt-timer, .state-body .prompt-timer { color: #fce094; }
+.terminal-body .prompt-pointer, .state-body .prompt-pointer { color: #87ff87; font-weight: 700; }
+.terminal-body .prompt-pointer-err, .state-body .prompt-pointer-err { color: #ff5f5f; font-weight: 700; }
+.terminal-body .prompt-root, .state-body .prompt-root { color: #d4af37; font-weight: 700; }
+.terminal-body .badge-err, .state-body .badge-err { color: #ff5f5f; font-weight: 700; }
+.terminal-body .prompt-user, .state-body .prompt-user { color: #a8a395; }
+.terminal-body .cmd, .state-body .cmd { color: #e8e4d8; }
+.terminal-body .out, .state-body .out { color: #a8a395; }
+.terminal-body .comment, .state-body .comment { color: #928d7d; font-style: italic; }
+.terminal-body .cursor, .state-body .cursor {
+  display: inline-block;
+  width: 8px; height: 16px;
+  background: #87ff87;
+  vertical-align: -3px;
+  animation: blink 1.1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-body .cursor, .state-body .cursor { animation: none; }
+}
+
+/* ================================================================
+   SECTION CHROME
+   ================================================================ */
+.section {
+  padding: 64px 0;
+  border-bottom: 2px solid var(--border-bright);
+}
+.section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 36px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.section-num {
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--green);
+  font-weight: 600;
+}
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 4vw, 40px);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
+  margin-top: 6px;
+}
+.section-title em { color: var(--amber); font-style: italic; }
+.section-sub {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: right;
+  max-width: 280px;
+}
+
+/* ================================================================
+   FEATURES GRID — table-skeleton cells
+   ================================================================ */
+.features-grid {
+  display: flex;
+  flex-wrap: wrap;
+  border: 2px solid var(--border-bright);
+}
+.features-grid > .feat-cell {
+  min-width: 0;
+  flex: 1 1 33.333%;
+  box-sizing: border-box;
+}
+@supports (display: grid) {
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .features-grid > .feat-cell { flex: none; }
+}
+.feat-cell {
+  padding: 32px 28px 36px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: relative;
+  transition: background 0.1s;
+}
+.feat-cell:hover { background: var(--surface-2); }
+.feat-cell:nth-child(3n) { border-right: none; }
+.feat-cell:nth-last-child(-n+3) { border-bottom: none; }
+
+/* Flexbox border corrections for non-grid browsers */
+@supports not (display: grid) {
+  .feat-cell:nth-child(3n+1):nth-last-child(2),
+  .feat-cell:nth-child(3n+1):nth-last-child(2) ~ .feat-cell,
+  .feat-cell:nth-child(3n+2):nth-last-child(1) {
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+.feat-id {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 16px;
+  display: block;
+}
+.feat-id .seq { color: var(--green); font-weight: 600; }
+
+.feat-glyph {
+  width: 44px; height: 44px;
+  border: 2px solid var(--border-bright);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+}
+.feat-glyph.g-green { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+.feat-glyph.g-amber { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+.feat-glyph.g-violet { border-color: var(--violet); color: var(--violet); background: var(--violet-dim); }
+.feat-glyph.g-blue { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
+.feat-glyph.g-oxblood { border-color: var(--oxblood); color: var(--oxblood); background: var(--oxblood-dim); }
+.feat-glyph.g-sand { border-color: var(--sand); color: var(--sand); background: var(--sand-dim); }
+
+.feat-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.feat-desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  margin-bottom: 14px;
+}
+.feat-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.feat-tag {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border: 1px solid var(--border-bright);
+  color: var(--muted);
+  background: var(--surface-2);
+}
+.feat-tag.t-green { color: var(--green); border-color: var(--green); }
+.feat-tag.t-amber { color: var(--amber); border-color: var(--amber); }
+.feat-tag.t-violet { color: var(--violet); border-color: var(--violet); }
+
+/* ================================================================
+   PROMPT SHOWCASE — annotated terminal
+   ================================================================ */
+.prompt-showcase {
+  display: flex;
+  flex-wrap: wrap;
+  border: 2px solid var(--border-bright);
+}
+.prompt-showcase > * { min-width: 0; flex: 1 1 50%; box-sizing: border-box; }
+@supports (display: grid) {
+  .prompt-showcase {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .prompt-showcase > * { flex: none; }
+}
+.prompt-demo {
+  padding: 0;
+  background: #0a0908;
+  border-right: 2px solid var(--border-bright);
+}
+.prompt-demo .terminal-body { padding: 28px 24px; font-size: 12px; }
+
+.prompt-annot {
+  padding: 36px 32px;
+  background: var(--surface);
+}
+.annot-item {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: start;
+}
+.annot-item:last-child { border-bottom: none; }
+.annot-swatch {
+  width: 14px; height: 14px;
+  border: 1px solid var(--border-bright);
+  margin-top: 3px;
+}
+.annot-swatch.s-brand { background: var(--violet); }
+.annot-swatch.s-cwd { background: var(--blue); }
+.annot-swatch.s-git { background: var(--pink); }
+.annot-swatch.s-flags { background: var(--orange); }
+.annot-swatch.s-lang { background: var(--green); }
+.annot-swatch.s-timer { background: var(--sand); }
+.annot-swatch.s-err { background: var(--oxblood); }
+.annot-swatch.s-ptr { background: var(--green); }
+.annot-label {
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.annot-desc {
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+/* ---- Operational states strip ---- */
+.states-grid {
+  display: flex;
+  flex-wrap: wrap;
+  border: 2px solid var(--border-bright);
+  border-top: none;
+}
+.states-grid > * { min-width: 0; flex: 1 1 50%; box-sizing: border-box; }
+@supports (display: grid) {
+  .states-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .states-grid > * { flex: none; }
+}
+.state-cell {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: #0a0908;
+}
+.state-cell:nth-child(2n) { border-right: none; }
+.state-label {
+  padding: 8px 16px;
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.state-body {
+  padding: 16px 18px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  overflow-x: auto;
+  color: #e8e4d8;
+  background: #0a0908;
+}
+@media (max-width: 720px) {
+  .states-grid { grid-template-columns: 1fr; }
+  .state-cell { border-right: none; }
+}
+
+/* ================================================================
+   BUILT-IN COMMANDS TABLE
+   ================================================================ */
+.cmd-table-wrap {
+  border: 2px solid var(--border-bright);
+  overflow-x: auto;
+  background: var(--surface);
+}
+.cmd-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+.cmd-table th {
+  background: var(--surface-3);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  text-align: left;
+  padding: 14px 18px;
+  border-bottom: 2px solid var(--border-bright);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+}
+.cmd-table td {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  vertical-align: top;
+}
+.cmd-table tr:nth-child(even) td { background: var(--surface-2); }
+.cmd-table tr:hover td { background: var(--surface-3); }
+.cmd-table tr:last-child td { border-bottom: none; }
+.cmd-table code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green);
+}
+.cmd-table .cmd-name {
+  white-space: nowrap;
+}
+.cmd-table .cmd-name .arg { color: var(--muted); font-weight: 400; }
+.cmd-table td:nth-child(2) { color: var(--ink-dim); }
+
+/* ================================================================
+   CODE BLOCKS — terminal style
+   ================================================================ */
+.code-grid {
+  display: flex;
+  flex-wrap: wrap;
+  border: 2px solid var(--border-bright);
+}
+.code-grid > .code-card { min-width: 0; overflow: hidden; flex: 1 1 50%; box-sizing: border-box; }
+@supports (display: grid) {
+  .code-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .code-grid > .code-card { flex: none; }
+}
+.code-card {
+  border-right: 2px solid var(--border-bright);
+  background: var(--surface);
+}
+.code-card:last-child { border-right: none; }
+
+.code-header {
+  padding: 8px 16px;
+  background: var(--surface-3);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.code-header .lang { color: var(--green); font-weight: 600; }
+.code-header .lang.bash { color: var(--amber); }
+.code-header .lang.toml { color: var(--violet); }
+
+.code-body {
+  padding: 20px 22px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  background: #0a0908;
+  color: #e8e4d8;
+}
+.code-body .cmt { color: #857f6f; }
+.code-body .kw { color: #d9ab3d; }
+.code-body .str { color: #7dbb5c; }
+.code-body .num { color: #d98a52; }
+.code-body .var { color: #a888d6; }
+.code-body .fn { color: #6ea8dd; }
+.code-body .op { color: #cbad82; }
+.code-body .flag { color: #d97a99; }
+
+/* ================================================================
+   ROADMAP — progress table
+   ================================================================ */
+.roadmap-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 2px solid var(--border-bright);
+  background: var(--surface);
+}
+.roadmap-table td {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.roadmap-table tr:last-child td { border-bottom: none; }
+
+.rm-status {
+  width: 100px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-right: 2px solid var(--border-bright);
+}
+.rm-status.done { background: var(--green-dim); color: var(--green); }
+.rm-status.planned { background: var(--amber-dim); color: var(--amber); }
+
+.rm-phase {
+  width: 120px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  border-right: 1px solid var(--border);
+}
+.rm-phase .ver { display: block; font-size: 11px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+
+.rm-detail {
+  font-size: 13px;
+  color: var(--ink-dim);
+  line-height: 1.55;
+}
+.rm-detail b { color: var(--ink); font-weight: 600; }
+
+/* ================================================================
+   CHANGELOG
+   ================================================================ */
+.changelog {
+  border: 2px solid var(--border-bright);
+  background: var(--surface);
+}
+.changelog-entry {
+  border-bottom: 1px solid var(--border);
+  padding: 24px 28px;
+}
+.changelog-entry:last-child { border-bottom: none; }
+
+.cl-version {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.cl-version .ver {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--green);
+}
+.cl-version .date {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cl-version .tag {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border: 1px solid var(--border-bright);
+  color: var(--muted);
+}
+.cl-version .tag.latest { color: var(--amber); border-color: var(--amber); }
+
+.cl-section-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--green);
+  font-weight: 600;
+  margin: 14px 0 8px;
+}
+.cl-items {
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+}
+.cl-items li {
+  padding-left: 18px;
+  position: relative;
+  margin-bottom: 6px;
+}
+.cl-items li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--green);
+}
+.cl-items li code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--amber);
+}
+
+/* ================================================================
+   FINAL CTA
+   ================================================================ */
+.cta-block {
+  background: #5a9e3f;
+  color: #0a0908;
+  padding: 56px 36px;
+  text-align: center;
+  border: 2px solid var(--border-bright);
+}
+.cta-block h2 {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4.5vw, 44px);
+  font-weight: 600;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+.cta-block p {
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: 480px;
+  margin: 0 auto 28px;
+  color: rgba(10, 9, 8, 0.82);
+}
+.cta-block .btn {
+  background: #0a0908;
+  color: #5a9e3f;
+  border-color: #0a0908;
+}
+.cta-block .btn:hover { background: transparent; color: #0a0908; border-color: #0a0908; }
+.cta-block .btn--ghost {
+  background: transparent;
+  color: #0a0908;
+  border-color: #0a0908;
+}
+.cta-block .btn--ghost:hover { background: #0a0908; color: #5a9e3f; }
+
+/* ================================================================
+   FOOTER — unique shell session style
+   ================================================================ */
+footer.site-footer {
+  background: #0a0908;
+  color: #a8a395;
+  border-top: 2px solid var(--border-bright);
+}
+.footer-term-header {
+  padding: 6px 24px;
+  background: #1a1816;
+  border-bottom: 1px solid #3a3833;
+  font-size: 11px;
+  color: #8a8576;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.footer-term-header .tdots { display: flex; gap: 5px; }
+.footer-term-header .tdots span {
+  width: 10px; height: 10px;
+  border: 1px solid #3a3833;
+}
+.footer-term-header .tdots .r { background: #a83333; }
+.footer-term-header .tdots .y { background: #c89829; }
+.footer-term-header .tdots .g { background: #5a9e3f; }
+.footer-term-header .path { font-variant-numeric: tabular-nums; }
+
+.footer-body {
+  display: flex;
+  flex-wrap: wrap;
+}
+.footer-body > .footer-col { min-width: 0; box-sizing: border-box; }
+.footer-body > .footer-col:nth-child(1) { flex: 1 1 37.5%; }
+.footer-body > .footer-col:nth-child(2),
+.footer-body > .footer-col:nth-child(3),
+.footer-body > .footer-col:nth-child(4) { flex: 1 1 20.8%; }
+@supports (display: grid) {
+  .footer-body {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 1fr;
+    gap: 0;
+  }
+  .footer-body > .footer-col { flex: none; }
+}
+.footer-col {
+  padding: 36px 28px;
+  border-right: 1px solid #3a3833;
+}
+.footer-col:last-child { border-right: none; }
+
+.foot-brand-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px; height: 36px;
+  background: #5a9e3f;
+  color: #0a0908;
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+.foot-brand-name {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  color: #e8e4d8;
+  margin-bottom: 12px;
+}
+.foot-brand-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #a8a395;
+  max-width: 260px;
+  margin-bottom: 20px;
+}
+.foot-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: #8a8576;
+}
+.foot-meta .kv { display: flex; gap: 8px; }
+.foot-meta .kv .k { color: #7dbb5c; min-width: 70px; }
+.foot-meta .kv .v { color: #a8a395; }
+
+.foot-col-title {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #d9ab3d;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.foot-col-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.foot-col-list li a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #a8a395;
+  text-decoration: none;
+  padding: 5px 0;
+  transition: color 0.1s;
+}
+.foot-col-list li a::before {
+  content: '─';
+  color: #857f6f;
+  font-size: 11px;
+}
+.foot-col-list li a:hover { color: #7dbb5c; }
+.foot-col-list li a:hover::before { color: #7dbb5c; }
+
+.foot-bottom {
+  border-top: 1px solid #3a3833;
+  padding: 14px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 11px;
+  color: #8a8576;
+}
+.foot-bottom .links { display: flex; gap: 16px; flex-wrap: wrap; }
+.foot-bottom a { color: #8a8576; text-decoration: none; transition: color 0.1s; }
+.foot-bottom a:hover { color: #7dbb5c; }
+.foot-bottom .shell-line {
+  font-family: var(--font-mono);
+  color: #7dbb5c;
+}
+.foot-bottom .shell-line .ptr { color: #7dbb5c; }
+
+/* ================================================================
+   RESPONSIVE — breakpoints at 900, 680, 500
+   ================================================================ */
+@media (max-width: 900px) {
+  .hero-grid { grid-template-columns: 1fr; }
+  .hero-left { border-right: none; border-bottom: 2px solid var(--border-bright); padding: 40px 28px; }
+  .features-grid { grid-template-columns: repeat(2, 1fr); }
+  .feat-cell:nth-child(3n) { border-right: 1px solid var(--border); }
+  .feat-cell:nth-child(2n) { border-right: none; }
+  .feat-cell:nth-last-child(-n+2) { border-bottom: none; }
+  .feat-cell:nth-last-child(3):not(:nth-last-child(-n+2)) { border-bottom: 1px solid var(--border); }
+  .prompt-showcase { grid-template-columns: 1fr; }
+  .prompt-demo { border-right: none; border-bottom: 2px solid var(--border-bright); }
+  .code-grid { grid-template-columns: 1fr; }
+  .code-card { border-right: none; border-bottom: 2px solid var(--border-bright); }
+  .code-card:last-child { border-bottom: none; }
+  .footer-body { grid-template-columns: 1fr 1fr; }
+  .footer-col:nth-child(2) { border-right: none; }
+  .footer-col:nth-child(1), .footer-col:nth-child(2) { border-bottom: 1px solid #3a3833; }
+}
+
+@media (max-width: 680px) {
+  .wrap { padding: 0 16px; }
+  .header-main { padding: 12px 16px; }
+  .menu-toggle { display: inline-flex; }
+  .nav-links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0; right: 0;
+    background: var(--surface);
+    border-bottom: 2px solid var(--border-bright);
+    flex-direction: column;
+    gap: 0;
+    z-index: 99;
+  }
+  .nav-links.open { display: flex; }
+  .nav-links a {
+    border: none !important;
+    border-bottom: 1px solid var(--border) !important;
+    padding: 12px 20px;
+    font-size: 13px;
+  }
+
+  .hero { padding: 32px 0 40px; }
+  .hero-left { padding: 28px 18px; }
+  .hero-right { overflow: hidden; }
+  .section { padding: 44px 0; }
+  .section-head { flex-direction: column; align-items: flex-start; }
+  .section-sub { text-align: left; }
+
+  .features-grid { grid-template-columns: 1fr; }
+  .feat-cell { border-right: none !important; }
+  .feat-cell:not(:last-child) { border-bottom: 1px solid var(--border) !important; }
+
+  .footer-body { grid-template-columns: 1fr; }
+  .footer-col { border-right: none !important; border-bottom: 1px solid #3a3833 !important; }
+  .footer-col:last-child { border-bottom: none !important; }
+
+  .cta-block { padding: 40px 20px; }
+  .hero-actions .btn { flex: 1; justify-content: center; }
+}
+
+@media (max-width: 500px) {
+  body { font-size: 14px; }
+  .header-bar { font-size: 10px; padding: 5px 16px; }
+  .header-bar .term-info { display: none; }
+  .brand-text { font-size: 18px; }
+  .hero-badge { font-size: 10px; }
+  .terminal-body { font-size: 11px; padding: 14px 12px; line-height: 1.7; }
+  .prompt-demo .terminal-body { font-size: 11px; }
+  .roadmap-table td { padding: 14px 12px; }
+  .rm-status { width: 80px; font-size: 10px; }
+  .rm-phase { width: 100px; font-size: 13px; }
+  .foot-bottom { flex-direction: column; align-items: flex-start; }
+}
+</style>
+</head>
+<body>
+
+<!-- ================================================================
+     HEADER — terminal title bar + nav
+     ================================================================ -->
+<header class="site-header">
+  <div class="header-bar">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="dots">
+        <span class="dot r"></span>
+        <span class="dot y"></span>
+        <span class="dot g"></span>
+      </div>
+      <span>sibsh &mdash; /dev/tty1 &mdash; 120&times;40</span>
+    </div>
+    <span class="term-info">rustc 1.80+ &middot; std-only &middot; v0.1.45</span>
+  </div>
+  <div class="header-main">
+    <a href="#" class="brand">
+      <span class="brand-glyph">$</span>
+      <span class="brand-text">sibsh<span class="dim"> &mdash; Something Is Better Shell</span></span>
+    </a>
+    <button type="button" class="menu-toggle" id="menuToggle" aria-expanded="false" aria-controls="navMenu">&#9776; MENU</button>
+    <nav class="nav-links" id="navMenu">
+      <a href="#features">Features</a>
+      <a href="#prompt">Prompt</a>
+      <a href="#builtins">Built-ins</a>
+      <a href="#install">Install</a>
+      <a href="#config">Config</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#changelog">Changelog</a>
+      <a href="https://github.com/pbarot2009/sibsh" target="_blank" rel="noopener" class="nav-cta">GitHub &nearr;</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ================================================================
+     HERO
+     ================================================================ -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <!-- Left: copy -->
+      <div class="hero-left">
+        <span class="hero-badge">Phase 1.2 &middot; Zero Dependencies</span>
+        <h1 class="hero-title">
+          A shell built from <span class="accent">scratch</span><br>
+          in <span class="accent-2">Rust</span>, std-only.
+        </h1>
+        <p class="hero-lede">
+          <span class="tag">sibsh</span> (Something Is Better Shell) is a lightweight, zero-dependency
+          Unix shell. No crates, no frameworks &mdash; just the Rust standard library and a
+          determination to build something fast and reliable by hand.
+        </p>
+        <div class="hero-actions">
+          <a href="#install" class="btn btn--primary">Get started</a>
+          <a href="https://github.com/pbarot2009/sibsh" target="_blank" rel="noopener" class="btn">View source</a>
+        </div>
+      </div>
+      <!-- Right: live terminal -->
+      <div class="hero-right">
+        <div class="terminal-frame">
+          <div class="terminal-header">
+            <div class="tdots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+            <span>sibsh &mdash; cargo run</span>
+          </div>
+          <div class="terminal-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#x23F1;]</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">cargo build --release</span></div>
+<div class="line"><span class="out">    Finished `release` profile [optimized] target(s) in 3.42s</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">./target/release/sibsh</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[!2 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">echo "Hello from $SHELL"</span></div>
+<div class="line"><span class="out">Hello from sibsh</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">false</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer-err">&#x276D;</span> <span class="cursor"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     FEATURES
+     ================================================================ -->
+<section class="section" id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="section-num">&#167; 01 &mdash; Features</span>
+        <h2 class="section-title">Everything the shell <em>needs</em>, nothing it doesn't.</h2>
+      </div>
+      <p class="section-sub">11 core capabilities, all built on the Rust standard library alone.</p>
+    </div>
+
+    <div class="features-grid">
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.01</span> / Dependencies</span>
+        <div class="feat-glyph g-green">0</div>
+        <h3 class="feat-title">Zero external dependencies</h3>
+        <p class="feat-desc">Built entirely using the Rust standard library. No crates, no cargo dependencies to audit, no supply chain to worry about.</p>
+        <div class="feat-tags"><span class="feat-tag t-green">std-only</span><span class="feat-tag">no crates</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.02</span> / REPL</span>
+        <div class="feat-glyph g-amber">>_</div>
+        <h3 class="feat-title">Interactive REPL</h3>
+        <p class="feat-desc">Read-Eval-Print loop with a two-line segment prompt, error status display, and graceful EOF handling on Ctrl+D.</p>
+        <div class="feat-tags"><span class="feat-tag t-amber">interactive</span><span class="feat-tag">Ctrl+D exit</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.03</span> / Prompt</span>
+        <div class="feat-glyph g-violet">&#x256D;</div>
+        <h3 class="feat-title">Segment prompt</h3>
+        <p class="feat-desc">Starship-style two-line prompt: git branch and dirty flags, SSH-only user@host, language detection, 2-second execution timer, exit badge, and root mode.</p>
+        <div class="feat-tags"><span class="feat-tag t-violet">git status</span><span class="feat-tag t-violet">ANSI-256</span><span class="feat-tag">ASCII mode</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.04</span> / Parser</span>
+        <div class="feat-glyph g-blue">{ }</div>
+        <h3 class="feat-title">Command parser</h3>
+        <p class="feat-desc">Supports single quotes, double quotes, escape characters, and environment variable expansion ($VAR, $?) with quote-aware operator detection.</p>
+        <div class="feat-tags"><span class="feat-tag">$VAR</span><span class="feat-tag">$?</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.05</span> / I/O</span>
+        <div class="feat-glyph g-oxblood">>></div>
+        <h3 class="feat-title">I/O redirection</h3>
+        <p class="feat-desc">Create/truncate (>), append (>>), and stdin (<) for external commands and built-ins. Quote-aware so echo 'a > b' stays literal.</p>
+        <div class="feat-tags"><span class="feat-tag">></span><span class="feat-tag">>></span><span class="feat-tag"><</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.06</span> / Completion</span>
+        <div class="feat-glyph g-sand">&#8677;</div>
+        <h3 class="feat-title">Tab completion</h3>
+        <p class="feat-desc">First Tab completes built-ins, aliases, $PATH executables, and file paths. A second Tab lists all candidates. Full line editing and history navigation.</p>
+        <div class="feat-tags"><span class="feat-tag">Tab&#215;2</span><span class="feat-tag">arrows</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.07</span> / Config</span>
+        <div class="feat-glyph g-green">&#9881;</div>
+        <h3 class="feat-title">Configuration file</h3>
+        <p class="feat-desc">~/.sibsh/sibsh.toml sets the prompt template, history limit, startup aliases, and imports of bash/zsh rc files &mdash; parsed by a std-only TOML subset parser.</p>
+        <div class="feat-tags"><span class="feat-tag t-green">TOML</span><span class="feat-tag">auto-template</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.08</span> / Aliases</span>
+        <div class="feat-glyph g-amber">=</div>
+        <h3 class="feat-title">Aliases</h3>
+        <p class="feat-desc">Define with alias name='value', remove with unalias. Loaded from config at startup. First-word expansion happens once (no recursion).</p>
+        <div class="feat-tags"><span class="feat-tag t-amber">alias</span><span class="feat-tag">unalias</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.09</span> / Execution</span>
+        <div class="feat-glyph g-violet">&#9654;</div>
+        <h3 class="feat-title">External command execution</h3>
+        <p class="feat-desc">Resolves binaries in $PATH and handles process execution with standard I/O inheritance. Fails gracefully with exit code 127.</p>
+        <div class="feat-tags"><span class="feat-tag t-violet">$PATH</span><span class="feat-tag">fork+exec</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.10</span> / History</span>
+        <div class="feat-glyph g-blue">&#8593;</div>
+        <h3 class="feat-title">In-memory history</h3>
+        <p class="feat-desc">Tracks every command entered during the active session. Navigate with Up/Down arrows. Configurable limit via history_limit in TOML.</p>
+        <div class="feat-tags"><span class="feat-tag">session</span><span class="feat-tag">Up/Down</span></div>
+      </div>
+      <div class="feat-cell">
+        <span class="feat-id"><span class="seq">F.11</span> / Built-ins</span>
+        <div class="feat-glyph g-oxblood">19</div>
+        <h3 class="feat-title">19 built-in commands</h3>
+        <p class="feat-desc">Essential shell commands implemented natively: cd, pwd, echo, exit, clear, type, which, env, export, unset, history, touch, cat, alias, unalias, true, false, help.</p>
+        <div class="feat-tags"><span class="feat-tag">native</span><span class="feat-tag">no fork</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     PROMPT SHOWCASE
+     ================================================================ -->
+<section class="section" id="prompt">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="section-num">&#167; 02 &mdash; The Prompt</span>
+        <h2 class="section-title">A prompt that tells you <em>everything</em>.</h2>
+      </div>
+      <p class="section-sub">Two-line segment prompt in the starship / oh-my-posh style. Every segment is a piece of information &mdash; and it renders differently across all seven operational states below.</p>
+    </div>
+
+    <div class="prompt-showcase">
+      <!-- Demo terminal -->
+      <div class="prompt-demo">
+        <div class="terminal-header">
+          <div class="tdots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+          <span>prompt demo</span>
+        </div>
+        <div class="terminal-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/compiler/parser</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#x23F1;]</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">make test</span></div>
+<div class="line"><span class="out">running 131 tests ...</span></div>
+<div class="line"><span class="out">test result: ok. 131 passed; 0 failed</span></div>
+<div class="line">&nbsp;</div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/code/sibsh</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">feature/pipelines</span> <span class="prompt-flags">[!5 ?2]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">cargo run</span></div>
+<div class="line"><span class="out">    Finished dev [unoptimized] target(s) in 0.42s</span></div>
+<div class="line">&nbsp;</div>
+<div class="line"><span class="comment"># failed command &mdash; red pointer + exit badge, runtime segment dropped</span></div>
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer-err">&#x276D;</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+      <!-- Annotations -->
+      <div class="prompt-annot">
+        <div class="annot-item">
+          <span class="annot-swatch s-brand"></span>
+          <div>
+            <div class="annot-label">[sibsh] &mdash; Brand segment</div>
+            <div class="annot-desc">Fixed brand identifier in ANSI-256 violet. Always present.</div>
+          </div>
+        </div>
+        <div class="annot-item">
+          <span class="annot-swatch s-cwd"></span>
+          <div>
+            <div class="annot-label">~/code/sibsh &mdash; Directory</div>
+            <div class="annot-desc">Current working directory. $HOME shows as ~. Paths deeper than 3 levels contract leading segments to &#x2026;/.</div>
+          </div>
+        </div>
+        <div class="annot-item">
+          <span class="annot-swatch s-git"></span>
+          <div>
+            <div class="annot-label">&#x2387; main &mdash; Git branch</div>
+            <div class="annot-desc">Current branch from one <code>git status --porcelain -b</code> call per prompt. Hidden outside repositories. Disable with <code>git_status = false</code>.</div>
+          </div>
+        </div>
+        <div class="annot-item">
+          <span class="annot-swatch s-flags"></span>
+          <div>
+            <div class="annot-label">[&#x21E1;2 &#x21E3;1 !3 ?1] &mdash; Dirty flags</div>
+            <div class="annot-desc">&#x21E1;N ahead / &#x21E3;N behind upstream, !N modified or staged files, ?N untracked files.</div>
+          </div>
+        </div>
+        <div class="annot-item">
+          <span class="annot-swatch s-lang"></span>
+          <div>
+            <div class="annot-label">rs v1.23 &mdash; Runtime detection</div>
+            <div class="annot-desc">Project language by files present: Cargo.toml &rarr; rs, go.mod/*.go &rarr; go, CMakeLists.txt/C &amp; C++ sources &rarr; c.</div>
+          </div>
+        </div>
+        <div class="annot-item">
+          <span class="annot-swatch s-timer"></span>
+          <div>
+            <div class="annot-label">[3.42s &#x23F1;] &mdash; Execution timer</div>
+            <div class="annot-desc">Shows only when the previous command took longer than 2 seconds (2000ms).</div>
+          </div>
+        </div>
+        <div class="annot-item">
+          <span class="annot-swatch s-err"></span>
+          <div>
+            <div class="annot-label">[127 &#x2718;] &mdash; Exit code badge</div>
+            <div class="annot-desc">Renders only on non-zero exit codes. The input pointer turns from green &#x276F; to red &#x276D;.</div>
+          </div>
+        </div>
+        <div class="annot-item">
+          <span class="annot-swatch s-ptr"></span>
+          <div>
+            <div class="annot-label">&#x276F; &mdash; Input pointer</div>
+            <div class="annot-desc">Green on success ($? == 0), red on failure. In root mode (UID 0) it becomes a bold gold # and runtime segments are dropped.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="states-grid">
+      <div class="state-cell">
+        <div class="state-label">1 &mdash; Normal clean state</div>
+        <div class="state-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">cargo check</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="state-label">2 &mdash; Dirty tree &amp; upstream divergence</div>
+        <div class="state-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">dev</span> <span class="prompt-flags">[&#x21E1;2 &#x21E3;1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cmd">git status</span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="state-label">3 &mdash; Command failure (exit &ne; 0)</div>
+        <div class="state-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="badge-err">[127 &#x2718;]</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer-err">&#x276D;</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="state-label">4 &mdash; Execution timer active (&gt; 2.0s)</div>
+        <div class="state-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span> <span class="prompt-timer">[3.42s &#x23F1;]</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="state-label">5 &mdash; Deep-path truncation</div>
+        <div class="state-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">&#x2026;/compiler/parser/ast</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+      <div class="state-cell">
+        <div class="state-label">6 &mdash; SSH / remote session</div>
+        <div class="state-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-user">u0_a457@localhost</span> <span class="prompt-on">in</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-git-icon">&#x2387;</span> <span class="prompt-branch">main</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-pointer">&#x276F;</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+      <div class="state-cell" style="border-bottom: none;">
+        <div class="state-label">7 &mdash; Superuser / root privileges</div>
+        <div class="state-body">
+<div class="line"><span class="prompt-top">&#x256D;&#x2500;</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-root">#</span> <span class="prompt-cwd">/etc/systemd/system</span></div>
+<div class="line"><span class="prompt-bottom">&#x2570;&#x2500;</span><span class="prompt-root">#</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+      <div class="state-cell" style="border-bottom: none;">
+        <div class="state-label">icons = "ascii" fallback mode</div>
+        <div class="state-body">
+<div class="line"><span class="prompt-top">+-</span> <span class="prompt-brand">[sibsh]</span> <span class="prompt-cwd">~/code/project</span> <span class="prompt-on">on</span> <span class="prompt-on">git:</span><span class="prompt-branch">main</span> <span class="prompt-flags">[^2 v1 !3 ?1]</span> <span class="prompt-via">via</span> <span class="prompt-lang">rs v1.23</span></div>
+<div class="line"><span class="prompt-bottom">+-</span><span class="prompt-pointer">&gt;</span> <span class="cursor"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     BUILT-IN COMMANDS
+     ================================================================ -->
+<section class="section" id="builtins">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="section-num">&#167; 03 &mdash; Built-ins</span>
+        <h2 class="section-title">19 commands, <em>natively</em> implemented.</h2>
+      </div>
+      <p class="section-sub">No fork, no exec &mdash; these run inside the shell process itself.</p>
+    </div>
+
+    <div class="cmd-table-wrap">
+      <table class="cmd-table">
+        <thead>
+          <tr>
+            <th>Command</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="cmd-name"><code>cd</code> <span class="arg">[dir]</span></td><td>Change working directory (supports ~, -, relative, and absolute paths)</td></tr>
+          <tr><td class="cmd-name"><code>pwd</code></td><td>Print current working directory</td></tr>
+          <tr><td class="cmd-name"><code>echo</code> <span class="arg">[-n] [args]</span></td><td>Print text to standard output</td></tr>
+          <tr><td class="cmd-name"><code>exit</code> <span class="arg">[code]</span></td><td>Exit the shell session with an optional exit code</td></tr>
+          <tr><td class="cmd-name"><code>clear</code></td><td>Clear the terminal screen</td></tr>
+          <tr><td class="cmd-name"><code>type</code> <span class="arg">[cmd]</span></td><td>Check if a command is a built-in or locate its binary path</td></tr>
+          <tr><td class="cmd-name"><code>which</code> <span class="arg">[cmd]</span></td><td>Print the full path of an executable from $PATH</td></tr>
+          <tr><td class="cmd-name"><code>env</code></td><td>List all current environment variables</td></tr>
+          <tr><td class="cmd-name"><code>export</code> <span class="arg">[KEY=VAL]</span></td><td>Set or update an environment variable</td></tr>
+          <tr><td class="cmd-name"><code>unset</code> <span class="arg">[KEY]</span></td><td>Remove an environment variable</td></tr>
+          <tr><td class="cmd-name"><code>history</code></td><td>List command history for the current session</td></tr>
+          <tr><td class="cmd-name"><code>touch</code> <span class="arg">[file...]</span></td><td>Create empty files or update file timestamps</td></tr>
+          <tr><td class="cmd-name"><code>cat</code> <span class="arg">[file...]</span></td><td>Output file contents to stdout (or read from stdin); byte-safe</td></tr>
+          <tr><td class="cmd-name"><code>alias</code> <span class="arg">[name='value']</span></td><td>List all aliases, or define one at runtime</td></tr>
+          <tr><td class="cmd-name"><code>unalias</code> <span class="arg"><name></span></td><td>Remove an alias</td></tr>
+          <tr><td class="cmd-name"><code>true</code></td><td>Return exit code 0</td></tr>
+          <tr><td class="cmd-name"><code>false</code></td><td>Return exit code 1</td></tr>
+          <tr><td class="cmd-name"><code>help</code></td><td>Display built-in command reference</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     INSTALL + USAGE
+     ================================================================ -->
+<section class="section" id="install">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="section-num">&#167; 04 &mdash; Getting Started</span>
+        <h2 class="section-title">Build it in <em>three commands</em>.</h2>
+      </div>
+      <p class="section-sub">Requires Rust 1.80+ and Cargo. That's it.</p>
+    </div>
+
+    <div class="code-grid">
+      <div class="code-card">
+        <div class="code-header">
+          <span>install.sh</span>
+          <span class="lang bash">bash</span>
+        </div>
+        <pre class="code-body"><span class="cmt"># Clone and build from source</span>
+<span class="fn">git</span> <span class="kw">clone</span> <span class="str">https://github.com/pbarot2009/sibsh.git</span>
+<span class="kw">cd</span> sibsh
+<span class="fn">cargo</span> <span class="kw">build</span> <span class="flag">--release</span>
+
+<span class="cmt"># Binary lands at ./target/release/sibsh</span>
+
+<span class="cmt"># Run with cargo:</span>
+<span class="fn">cargo</span> <span class="kw">run</span>
+
+<span class="cmt"># Or run the compiled binary:</span>
+./target/release/sibsh</pre>
+      </div>
+      <div class="code-card">
+        <div class="code-header">
+          <span>example-session.sh</span>
+          <span class="lang bash">bash</span>
+        </div>
+        <pre class="code-body"><span class="cmt"># Inspect environment and working directory</span>
+<span class="kw">pwd</span>
+<span class="kw">echo</span> <span class="str">"Running as user: <span class="var">$USER</span>"</span>
+
+<span class="cmt"># Directory navigation</span>
+<span class="kw">cd</span> /tmp
+<span class="kw">pwd</span>
+<span class="kw">cd</span> <span class="op">-</span>
+
+<span class="cmt"># Manage variables</span>
+<span class="kw">export</span> <span class="var">PROJECT</span><span class="op">=</span><span class="str">"sibsh"</span>
+<span class="kw">echo</span> <span class="var">$PROJECT</span>
+
+<span class="cmt"># I/O redirection</span>
+<span class="kw">echo</span> <span class="str">"Hello, World"</span> <span class="op">></span> greeting.txt
+<span class="kw">cat</span> greeting.txt
+<span class="kw">echo</span> <span class="str">"Second line"</span> <span class="op">>></span> greeting.txt
+
+<span class="cmt"># Quoted operators stay literal</span>
+<span class="kw">echo</span> <span class="str">'a > b'</span>    <span class="cmt"># prints: a > b</span>
+
+<span class="cmt"># Aliases</span>
+<span class="kw">alias</span> <span class="var">ll</span><span class="op">=</span><span class="str">'ls -la'</span>
+ll
+<span class="kw">unalias</span> ll
+
+<span class="cmt"># Exit codes</span>
+<span class="kw">false</span>
+<span class="kw">echo</span> <span class="var">$?</span>      <span class="cmt"># prints: 1</span></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     CONFIG
+     ================================================================ -->
+<section class="section" id="config">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="section-num">&#167; 05 &mdash; Configuration</span>
+        <h2 class="section-title">One file, <em>plain TOML</em>.</h2>
+      </div>
+      <p class="section-sub">~/.sibsh/sibsh.toml &mdash; or override with $SIBSH_CONFIG. Missing or invalid config never blocks startup.</p>
+    </div>
+
+    <div class="code-grid">
+      <div class="code-card">
+        <div class="code-header">
+          <span>~/.sibsh/sibsh.toml</span>
+          <span class="lang toml">toml</span>
+        </div>
+        <pre class="code-body"><span class="cmt"># Custom single-line prompt template</span>
+<span class="cmt"># Placeholders: {user} {host} {cwd} {status} {branch}</span>
+<span class="cmt"># prompt = "{user}@{host}:{cwd} &#10095;"</span>
+
+<span class="var">icons</span> <span class="op">=</span> <span class="str">"ascii"</span>          <span class="cmt"># plain glyphs instead of Nerd Font</span>
+<span class="var">git_status</span> <span class="op">=</span> <span class="kw">true</span>          <span class="cmt"># false hides git segment</span>
+<span class="var">history_limit</span> <span class="op">=</span> <span class="num">1000</span>      <span class="cmt"># cap on in-memory history</span>
+<span class="var">imports</span> <span class="op">=</span> [<span class="str">"~/.bashrc"</span>, <span class="str">"~/.zshrc"</span>]
+
+<span class="kw">[aliases]</span>
+<span class="var">ll</span> <span class="op">=</span> <span class="str">"ls -la"</span>
+<span class="var">gs</span> <span class="op">=</span> <span class="str">"git status"</span></pre>
+      </div>
+      <div class="code-card">
+        <div class="code-header">
+          <span>config-behavior.txt</span>
+          <span class="lang">text</span>
+        </div>
+        <pre class="code-body"><span class="cmt"># How imports work</span>
+Imported files run bashrc/zshrc style:
+  - export KEY=VAL     &rarr; sets environment variable
+  - alias name='val'   &rarr; defines alias
+  - # comments          &rarr; skipped
+  - plain commands      &rarr; executed
+  - bash-only syntax    &rarr; skipped silently
+
+<span class="cmt"># First run</span>
+On first run, sibsh writes a fully commented
+template to ~/.sibsh/sibsh.toml explaining every
+option. The same file ships in the repo as
+sibsh.toml.example.
+
+<span class="cmt"># Error handling</span>
+A missing or invalid config never prevents
+startup. Parse errors report the line number.
+
+<span class="cmt"># Override path</span>
+export SIBSH_CONFIG=/custom/path.toml</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     ROADMAP
+     ================================================================ -->
+<section class="section" id="roadmap">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="section-num">&#167; 06 &mdash; Roadmap</span>
+        <h2 class="section-title">What's <em>done</em>, what's next.</h2>
+      </div>
+      <p class="section-sub">Phases 1.1&ndash;1.5 and 2.0, tracked to semantic versions.</p>
+    </div>
+
+    <table class="roadmap-table">
+      <tbody>
+        <tr>
+          <td class="rm-status done">&#10003; DONE</td>
+          <td class="rm-phase">Phase 1.1<span class="ver">v0.1.0</span></td>
+          <td class="rm-detail">Core REPL loop, argument parser, <b>16 built-in commands</b>, process execution, in-memory history, graceful EOF and exit status propagation.</td>
+        </tr>
+        <tr>
+          <td class="rm-status done">&#10003; DONE</td>
+          <td class="rm-phase">Phase 1.2<span class="ver">v0.1.2</span></td>
+          <td class="rm-detail"><b>I/O redirection</b> (>, >>, <) for external commands and built-ins. Quote-aware parsing, $VAR expansion in filenames, byte-safe cat, clear error messages.</td>
+        </tr>
+        <tr>
+          <td class="rm-status done">&#10003; DONE</td>
+          <td class="rm-phase">Additions<span class="ver">v0.1.3</span></td>
+          <td class="rm-detail"><b>Tab completion</b> with line editing and history navigation. <b>~/.sibsh/sibsh.toml</b> configuration (prompt template, history limit). Aliases (alias/unalias) with bashrc/zshrc-style imports. Test suite: 100 tests.</td>
+        </tr>
+        <tr>
+          <td class="rm-status done">&#10003; DONE</td>
+          <td class="rm-phase">Prompt redesign<span class="ver">v0.1.45</span></td>
+          <td class="rm-detail">Two-line segment prompt: git status, language detection, execution timer, exit badge, SSH detection, root mode, path truncation, ANSI-256 palette, ASCII icon mode. Test suite: 131 tests.</td>
+        </tr>
+        <tr>
+          <td class="rm-status planned">&#9744; PLANNED</td>
+          <td class="rm-phase">Phase 1.3<span class="ver">v0.2.0</span></td>
+          <td class="rm-detail"><b>Pipelines</b> (cmd1 | cmd2 | cmd3) with concurrent stage execution.</td>
+        </tr>
+        <tr>
+          <td class="rm-status planned">&#9744; PLANNED</td>
+          <td class="rm-phase">Phase 1.4<span class="ver">v0.2.x</span></td>
+          <td class="rm-detail"><b>Command sequencing</b> and conditional execution (;, &&, ||).</td>
+        </tr>
+        <tr>
+          <td class="rm-status planned">&#9744; PLANNED</td>
+          <td class="rm-phase">Phase 1.5<span class="ver">v0.3.0</span></td>
+          <td class="rm-detail"><b>Filename expansion</b> (globbing) and tilde expansion.</td>
+        </tr>
+        <tr>
+          <td class="rm-status planned">&#9744; PLANNED</td>
+          <td class="rm-phase">Phase 2.0<span class="ver">TBD</span></td>
+          <td class="rm-detail"><b>Job control</b>, signal handling (SIGINT, SIGTSTP), persistent history file.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================================================================
+     CHANGELOG
+     ================================================================ -->
+<section class="section" id="changelog">
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <span class="section-num">&#167; 07 &mdash; Changelog</span>
+        <h2 class="section-title">Every version, <em>documented</em>.</h2>
+      </div>
+      <p class="section-sub">Keep a Changelog format. Semantic versioning.</p>
+    </div>
+
+    <div class="changelog">
+      <div class="changelog-entry">
+        <div class="cl-version">
+          <span class="ver">0.1.45</span>
+          <span class="date">2026-08-23</span>
+          <span class="tag latest">LATEST</span>
+        </div>
+        <div class="cl-section-label">Added</div>
+        <ul class="cl-items">
+          <li>Two-line, segment-based prompt in the starship / oh-my-posh style with git status, language detection, execution timer, exit badge, SSH detection, root mode, path truncation, ANSI-256 palette, and ASCII icon mode.</li>
+          <li>Git segment: branch + dirty-state flags (<code>!N</code> modified, <code>?N</code> untracked, <code>&#8673;N</code> ahead, <code>&#8675;N</code> behind) from one <code>git status --porcelain -b</code> call per prompt.</li>
+          <li><code>{branch}</code> placeholder for custom prompt templates.</li>
+        </ul>
+        <div class="cl-section-label">Changed</div>
+        <ul class="cl-items">
+          <li>Line editor repaints multi-line prompts correctly &mdash; redraws move up over every prompt line and completion list, clear to end of screen, then rewrite.</li>
+          <li>Test suite grew to 131 tests (84 unit + 47 integration), pinning environment identity so tests pass as root or non-root, local or CI.</li>
+        </ul>
+      </div>
+
+      <div class="changelog-entry">
+        <div class="cl-version">
+          <span class="ver">0.1.4</span>
+          <span class="date">2026-08-23</span>
+        </div>
+        <div class="cl-section-label">Fixed</div>
+        <ul class="cl-items">
+          <li>Interactive mode showed two prompts on one line. Prompt rendering now belongs entirely to the line reader (<code>completion::read_line</code>), matching zsh's ZLE / fish model.</li>
+          <li>Non-terminal input (piped scripts) keeps its prompt output; fallback path prints once before reading.</li>
+          <li>CI failure <code>completes_builtin_commands</code>: completion unit tests depended on real <code>$PATH</code>. New <code>complete_in()</code> takes an explicit directory list; tests use synthetic directories.</li>
+          <li><code>cargo fmt --all</code> applied to all sources.</li>
+        </ul>
+      </div>
+
+      <div class="changelog-entry">
+        <div class="cl-version">
+          <span class="ver">0.1.3</span>
+          <span class="date">2026-08-23</span>
+        </div>
+        <div class="cl-section-label">Added</div>
+        <ul class="cl-items">
+          <li><b>Tab completion</b> (std-only via <code>stty</code> raw mode): first word completes builtins, aliases, $PATH executables; other words complete paths. Line editing, history navigation, Ctrl+C clears line, Ctrl+D exits.</li>
+          <li><b>Configuration file</b> <code>~/.sibsh/sibsh.toml</code>: prompt template, history_limit, [aliases] table, imports. Parsed by std-only TOML subset parser.</li>
+          <li><b>Aliases</b>: <code>alias</code> builtin (list all or define) and <code>unalias</code>. First-word expansion, no recursion.</li>
+        </ul>
+        <div class="cl-section-label">Changed</div>
+        <ul class="cl-items">
+          <li><code>touch</code> now updates modification time of existing files via <code>File::set_modified</code>.</li>
+          <li>Prompt rendering supports config templates (<code>Prompt::render_with</code>).</li>
+          <li>Test coverage grew to 100 tests: 60 unit + 40 integration.</li>
+        </ul>
+      </div>
+
+      <div class="changelog-entry">
+        <div class="cl-version">
+          <span class="ver">0.1.2</span>
+          <span class="date">2026-08-22</span>
+        </div>
+        <div class="cl-section-label">Added</div>
+        <ul class="cl-items">
+          <li><b>I/O Redirection</b> for external commands and built-ins: <code>></code> truncate, <code>>></code> append, <code><</code> stdin.</li>
+          <li>Multiple redirections per line; last target per stream wins.</li>
+          <li>Quote-aware operator parsing: <code>echo 'a > b'</code> stays literal. Attached and spaced forms both work.</li>
+          <li><code>$VAR</code> / <code>$?</code> expansion inside filenames. Quoted filenames may contain spaces.</li>
+          <li>New syntax errors: missing filename after operator, empty filename from expansion.</li>
+          <li><code>ShellError::Redirection</code> variant with clear messages.</li>
+        </ul>
+        <div class="cl-section-label">Changed</div>
+        <ul class="cl-items">
+          <li>All printing built-ins write through an explicit output handle instead of global stdout.</li>
+          <li><code>cat</code> is now byte-safe (<code>io::copy</code>).</li>
+          <li>REPL reads stdin per-call instead of holding the lock across dispatch.</li>
+        </ul>
+      </div>
+
+      <div class="changelog-entry">
+        <div class="cl-version">
+          <span class="ver">0.1.1</span>
+          <span class="date">2026-08-21</span>
+        </div>
+        <div class="cl-section-label">Added</div>
+        <ul class="cl-items">
+          <li>Project documentation: <code>CHECKLISTS.md</code> with phase-by-phase roadmaps, design decisions, edge-case matrices, and definitions of done.</li>
+        </ul>
+      </div>
+
+      <div class="changelog-entry">
+        <div class="cl-version">
+          <span class="ver">0.1.0</span>
+          <span class="date">2026-08-21</span>
+          <span class="tag">INITIAL</span>
+        </div>
+        <div class="cl-section-label">Added</div>
+        <ul class="cl-items">
+          <li>Core interactive REPL loop with colored prompt.</li>
+          <li>Tokenizer: single quotes, double quotes, escapes, <code>$VAR</code> / <code>$?</code> expansion.</li>
+          <li>PATH lookup and external process execution.</li>
+          <li>In-memory command history (<code>history</code>).</li>
+          <li>16 initial built-in commands: cd, pwd, echo, exit, help, clear, type, which, env, export, unset, history, touch, cat, true, false.</li>
+          <li>Graceful exit on EOF (Ctrl+D) and custom exit status propagation.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     FINAL CTA
+     ================================================================ -->
+<section class="section" style="border-bottom: none;">
+  <div class="wrap">
+    <div class="cta-block">
+      <h2>Build the shell you want to use.</h2>
+      <p>Clone the repo, run cargo build, and start typing. Zero dependencies means you can read every line of the source and understand exactly what your shell is doing.</p>
+      <div class="hero-actions" style="justify-content: center;">
+        <a href="https://github.com/pbarot2009/sibsh" target="_blank" rel="noopener" class="btn">Clone on GitHub &nearr;</a>
+        <a href="#install" class="btn btn--ghost">Read the docs</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     FOOTER — shell session style
+     ================================================================ -->
+<footer class="site-footer">
+  <div class="footer-term-header">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="tdots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+      <span>sibsh &mdash; /home/user &mdash; 120&times;40</span>
+    </div>
+    <span class="path">exit 0 &middot; session closed</span>
+  </div>
+
+  <div class="footer-body">
+    <!-- Brand column -->
+    <div class="footer-col">
+      <div class="foot-brand-glyph">$</div>
+      <div class="foot-brand-name">sibsh</div>
+      <p class="foot-brand-desc">
+        Something Is Better Shell. A lightweight, zero-dependency Unix shell
+        written in Rust using only the standard library. Built from scratch,
+        one phase at a time.
+      </p>
+      <div class="foot-meta">
+        <div class="kv"><span class="k">language</span><span class="v">Rust</span></div>
+        <div class="kv"><span class="k">deps</span><span class="v">0 (std-only)</span></div>
+        <div class="kv"><span class="k">version</span><span class="v">0.1.45</span></div>
+        <div class="kv"><span class="k">license</span><span class="v">Apache 2.0</span></div>
+        <div class="kv"><span class="k">tests</span><span class="v">131 (84 unit + 47 integration)</span></div>
+      </div>
+    </div>
+    <!-- Product links -->
+    <div class="footer-col">
+      <div class="foot-col-title">Product</div>
+      <ul class="foot-col-list">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#prompt">The Prompt</a></li>
+        <li><a href="#builtins">Built-in Commands</a></li>
+        <li><a href="#roadmap">Roadmap</a></li>
+        <li><a href="#changelog">Changelog</a></li>
+      </ul>
+    </div>
+    <!-- Resources -->
+    <div class="footer-col">
+      <div class="foot-col-title">Resources</div>
+      <ul class="foot-col-list">
+        <li><a href="#install">Installation</a></li>
+        <li><a href="#config">Configuration</a></li>
+        <li><a href="https://github.com/pbarot2009/sibsh" target="_blank" rel="noopener">Source code</a></li>
+        <li><a href="https://github.com/pbarot2009/sibsh/blob/main/CHECKLISTS.md" target="_blank" rel="noopener">Checklists</a></li>
+        <li><a href="https://github.com/pbarot2009/sibsh/blob/main/sibsh.toml.example" target="_blank" rel="noopener">Config example</a></li>
+      </ul>
+    </div>
+    <!-- Community / meta -->
+    <div class="footer-col">
+      <div class="foot-col-title">Project</div>
+      <ul class="foot-col-list">
+        <li><a href="https://github.com/pbarot2009/sibsh/releases" target="_blank" rel="noopener">Releases</a></li>
+        <li><a href="https://github.com/pbarot2009/sibsh/issues" target="_blank" rel="noopener">Issues</a></li>
+        <li><a href="https://github.com/pbarot2009/sibsh/blob/main/LICENSE" target="_blank" rel="noopener">License (Apache 2.0)</a></li>
+        <li><a href="https://github.com/pbarot2009/sibsh" target="_blank" rel="noopener">GitHub &nearr;</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foot-bottom">
+    <span>&copy; 2026 sibsh &middot; pbarot2009 &middot; Apache License 2.0</span>
+    <div class="links">
+      <a href="https://github.com/pbarot2009/sibsh" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/pbarot2009/sibsh/blob/main/LICENSE" target="_blank" rel="noopener">License</a>
+      <a href="https://github.com/pbarot2009/sibsh/issues" target="_blank" rel="noopener">Issues</a>
+    </div>
+    <span class="shell-line"><span class="ptr">&#10095;</span> exit 0</span>
+  </div>
+</footer>
+
+<script>
+  // Mobile nav toggle
+  (function() {
+    var toggle = document.getElementById('menuToggle');
+    var nav = document.getElementById('navMenu');
+    if (!toggle || !nav) return;
+
+    function setOpen(isOpen) {
+      nav.classList.toggle('open', isOpen);
+      toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    }
+
+    toggle.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(!nav.classList.contains('open'));
+    });
+    // Close on outside click
+    document.addEventListener('click', function(e) {
+      if (nav.classList.contains('open') && !nav.contains(e.target) && !toggle.contains(e.target)) {
+        setOpen(false);
+      }
+    });
+    // Close on Escape
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && nav.classList.contains('open')) {
+        setOpen(false);
+        toggle.focus();
+      }
+    });
+    // Close on link click
+    nav.querySelectorAll('a').forEach(function(a) {
+      a.addEventListener('click', function() {
+        setOpen(false);
+      });
+    });
+    // Close automatically if resized back to desktop width
+    window.addEventListener('resize', function() {
+      if (window.innerWidth > 680) setOpen(false);
+    });
+  })();
+</script>
+
+</body>
+</html>

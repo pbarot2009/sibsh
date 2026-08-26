@@ -176,9 +176,14 @@ not a production shell yet. Still zero external dependencies.
 
 #### Design decisions (settled)
 
-- [x] Raw terminal mode without libc: drive external `stty raw -echo` /
-      `stty sane` via `std::process::Command`. When `stty` fails (piped stdin,
-      tests), fall back to plain buffered line reading automatically.
+- [x] Raw terminal mode without libc-crate dependencies: direct
+      `tcgetattr`/`tcsetattr` syscalls declared against the platform libc in
+      `src/tty.rs` (originally `stty raw -echo` / `stty sane` via
+      `std::process::Command` in v0.1.3; replaced in the patch below once the
+      per-keystroke subprocess spawn was found to race the terminal's line
+      discipline). When stdin is not a terminal (piped stdin, tests), raw
+      mode is unavailable and the shell falls back to plain buffered line
+      reading automatically.
 - [x] TOML parsing without crates: small TOML-subset parser in `src/config.rs`
       (sections, strings, integers, booleans, string arrays). Std has no TOML;
       adding `toml`+serde would break the zero-dependency policy for little gain.
@@ -203,7 +208,10 @@ not a production shell yet. Still zero external dependencies.
 - [x] Up/Down arrows navigate history, saving/restoring the in-progress line
 - [x] Ctrl+C clears the line and re-prompts (does not exit); Ctrl+D on empty
       line still exits; multi-byte UTF-8 input handled correctly
-- [x] Terminal restored (`stty sane`) after every line read
+- [x] Terminal restored after every line read via an RAII guard
+      (`tty::RawGuard`) so cleanup runs on every exit path — normal return,
+      an early `?`, or a panic unwinding through the frame — not only the
+      clean-return case a bare pre/post `stty` pair covered.
 
 #### Config file (`src/config.rs`) (done)
 
@@ -262,7 +270,8 @@ not a production shell yet. Still zero external dependencies.
 - [x] Viewport clamp: repaints never move the cursor past the top row when a
       render is taller than the screen (scrolled input); the visible screen is
       cleared and rewritten instead.
-- [x] `stty` stderr silenced on non-terminal stdin (piped scripts, tests).
+- [x] Terminal-size ioctl stderr silenced on non-terminal stdin (piped
+      scripts, tests) via the same fallback path as raw-mode entry.
 - [x] `tests/pty_harness.py` extended to 26 scenarios; the mini emulator now
       models soft/hard line breaks and re-flows on resize, replaying output
       and resizes chronologically. New scenarios: shrink mid-typing, grow
@@ -270,6 +279,51 @@ not a production shell yet. Still zero external dependencies.
 - [x] Regression-proven: the v0.1.46 binary fails the resize frame-stability
       checks; the fixed build passes all 26 scenarios.
 - [x] Unit tests for the repaint math (`up_rows` clamping, resize re-measure).
+
+#### Maintenance patch — raw-mode race, CSI width bug, panic safety (unreleased)
+
+Goal: root-cause the intermittent duplicated/ghosted prompt lines reported
+after `cd`, builtins, and long input; general bug-hunt pass across the rest
+of the source. No version bump, no architectural change — patch-level fixes
+only. See [CHANGELOGS.md → Unreleased](CHANGELOGS.md#unreleased) for the
+user-facing summary.
+
+- [x] Root cause identified: `read_line` spawned `stty raw -echo` /
+      `stty sane` as a *subprocess* once per prompt cycle. The window
+      between the shell flushing previous output (cooked mode) and the
+      forked `stty raw` child completing its own `ioctl` on the shared
+      controlling tty let a keystroke be echoed once by the kernel (still
+      cooked) and once more by sibsh's repaint — the duplication/ghosting.
+      Fixed: `src/tty.rs` now enters/exits raw mode with direct
+      `tcgetattr`/`tcsetattr` calls, no subprocess, no race window.
+- [x] Second bug found while writing regression tests for the above: the
+      CSI-sequence skip logic in `display_width`/`render_rows` used a
+      single `in_ansi` flag together with a "is this an ASCII letter"
+      (later "is this in 0x40-0x7E") final-byte check applied uniformly to
+      every byte seen while `in_ansi`. Because the CSI introducer `[`
+      (0x5B) itself falls inside 0x40-0x7E, that check closed the sequence
+      on the introducer instead of the real final byte, leaving a
+      sequence's own parameter digits and terminator measured as visible
+      text — corrupting cursor/row math for any multi-parameter SGR color
+      (i.e. most of sibsh's own prompt palette). Fixed with a three-state
+      machine (`Normal`/`Escaped`/`Csi`) that cannot conflate the two.
+- [x] Raw mode gained a `Drop`-based guard (`tty::RawGuard`) plus a
+      `main.rs` panic hook, so a panic while stdin is raw always restores
+      cooked mode instead of leaving the terminal stuck.
+- [x] `handle_escape` no longer silently drops the byte following a lone
+      `ESC` that isn't `[` (Alt-key chords on many terminals); it is now
+      inserted into the line like any other keystroke.
+- [x] Full source re-audit: `builtins.rs`, `parser.rs`, `config.rs`,
+      `pipeline.rs`, `error.rs` read end-to-end; no further correctness
+      bugs found (all already handle missing files, invalid UTF-8, empty
+      slices, and I/O errors without panicking).
+- [x] Verification: rustc 1.75 (only apt-available version; the crate's
+      `edition = "2024"` needs newer) could not build the crate directly,
+      so the changed modules were compiled and unit-tested in isolation
+      against the exact committed source — 26/26 tests passing, including
+      6 new regression tests — and the raw-mode transition was verified
+      against a real PTY (`pty.fork()`), confirming ICANON/ECHO flags flip
+      on entry and restore on both normal return and a forced panic.
 
 #### Prompt rendering fixes in v0.1.46 (done)
 

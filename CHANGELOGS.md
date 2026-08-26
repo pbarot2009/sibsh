@@ -15,6 +15,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Phase 2.0** — Job control, signal handling (`SIGINT`, `SIGTSTP`),
   persistent history file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Prompt duplication/ghosting on redraw** (root cause of intermittent
+  overlapped or doubled prompt lines after `cd`, builtins, or long input):
+  `read_line` toggled raw terminal mode by spawning `stty raw -echo` /
+  `stty sane` as a *subprocess* on every single prompt cycle. The window
+  between the shell flushing the previous command's output (cooked mode)
+  and the forked `stty raw` child actually completing its `ioctl` on the
+  shared controlling tty was a real race: a keystroke landing in that
+  window could be echoed once by the kernel's line discipline (still
+  cooked) and once more by sibsh's own repaint. Replaced with direct
+  `tcgetattr`/`tcsetattr` syscalls in `src/tty.rs` (no fork/exec, no
+  window). Verified against a real PTY: raw mode now measurably engages
+  and restores on the exact syscall boundary, with no subprocess in
+  between.
+- **ANSI/CSI width miscalculation** in the line editor's cursor-position
+  math (`display_width`, `render_rows`): the escape-sequence skipper
+  treated the CSI introducer byte `[` (0x5B) as indistinguishable from a
+  CSI *final* byte, because both single-flag state and any letter-only
+  final-byte check land inside the same 0x40–0x7E range that `[` also
+  occupies. In the fixed byte-for-byte trace, that meant the introducer
+  could immediately (and incorrectly) close the very sequence it just
+  opened, leaving the sequence's own parameter digits and real final byte
+  (e.g. the `38`, `5`, and `m` in `\x1b[38;5;242m`) measured as visible
+  text instead of skipped — corrupting cursor/row math for any multi-
+  parameter SGR color code, which is most of them. Replaced the single
+  `in_ansi` flag with a proper three-state machine (`Normal` / `Escaped` /
+  `Csi`) that cannot conflate the introducer with a terminator. Also
+  widened final-byte recognition from ASCII letters only to the full
+  ECMA-48 range (0x40–0x7E), closing the same class of bug for any
+  symbol-terminated sequence a custom `prompt` template or pasted input
+  might contain.
+- **Terminal left stuck in raw mode after a panic**: there was no
+  panic-safety net around raw mode — a panic while stdin was raw (no
+  echo, no line buffering) could leave the user's terminal unusable after
+  sibsh exited. Raw-mode entry now returns an RAII guard that restores
+  the original terminal settings on `Drop`, including during an unwinding
+  panic, plus a panic hook as a backstop. Verified by forcing a panic
+  mid-raw-mode under a real PTY and confirming echo/canonical mode were
+  both restored.
+- **Lost keystroke on Alt-chords / stray Escape sequences**: `ESC`
+  followed by a byte other than `[` (many terminals send `Alt+key` as
+  `ESC key`) was silently discarded instead of being treated as input.
+  The byte is now inserted into the line like any other keystroke.
+
+### Changed
+
+- `src/tty.rs` gained raw-mode primitives (`enter_raw_mode`, `RawGuard`,
+  `with_raw_mode`) alongside its existing `ioctl(TIOCGWINSZ)` terminal-size
+  code — same rationale, same pattern: direct syscalls instead of an
+  `stty` subprocess. The project remains zero-dependency.
+- Test coverage: `completion.rs` gained 6 regression tests targeting the
+  CSI-introducer/final-byte confusion specifically (including one that
+  fails against the pre-fix logic), independently compiled and executed
+  against the real source and passing 26/26 alongside every pre-existing
+  test in the module.
+
 ## [0.2.1] - 2026-08-23
 
 Resize survival for the line editor, plus the fix for duplicated prompt

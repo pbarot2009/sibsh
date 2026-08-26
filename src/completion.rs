@@ -1,7 +1,8 @@
 //! Interactive line reading: tab completion, basic line editing, and
-//! history navigation. Uses `stty` for raw terminal mode so the project
-//! stays dependency-free. When stdin is not a terminal (scripts, tests),
-//! falls back to plain buffered line reading.
+//! history navigation. Raw terminal mode is entered via direct
+//! `tcgetattr`/`tcsetattr` calls in [`crate::tty`] (no `stty` subprocess,
+//! no dependencies). When stdin is not a terminal (scripts, tests), falls
+//! back to plain buffered line reading.
 
 use crate::builtins::Builtins;
 use crate::config::expand_tilde;
@@ -11,7 +12,6 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
-use std::process::Command;
 
 const CTRL_A: u8 = 0x01;
 const CTRL_C: u8 = 0x03;
@@ -176,31 +176,26 @@ fn is_executable(path: &std::path::Path) -> bool {
 /// Reads one input line interactively. Returns `Ok(None)` on EOF (Ctrl+D on
 /// an empty line). Falls back to plain buffered reading when stdin is not a
 /// terminal.
+///
+/// Raw mode is entered and left via [`tty::with_raw_mode`], which uses
+/// `tcgetattr`/`tcsetattr` directly instead of forking `stty raw -echo` /
+/// `stty sane`. The guard it installs restores the original mode on every
+/// exit path out of `read_line_raw` — normal return, an `Err` from a `?`,
+/// or a panic unwinding through this frame — which a bare pair of `stty`
+/// subprocess calls around the function body did not: an early return or
+/// panic used to skip the trailing `stty sane` entirely, leaving the
+/// user's terminal stuck in raw/no-echo mode after sibsh exited.
 pub fn read_line(
     prompt: &str,
     history: &[String],
     aliases: &[(String, String)],
 ) -> io::Result<Option<String>> {
-    // `stty` fails when stdin is not a TTY (piped scripts, tests), which
-    // selects the non-interactive fallback automatically.
-    if stty(&["raw", "-echo"]) {
-        let result = read_line_raw(prompt, history, aliases);
-        let _ = stty(&["sane"]);
-        result
-    } else {
-        read_line_plain(prompt)
+    // `with_raw_mode` returns `None` when stdin is not a TTY (piped
+    // scripts, tests), which selects the non-interactive fallback.
+    match tty::with_raw_mode(|| read_line_raw(prompt, history, aliases)) {
+        Some(result) => result,
+        None => read_line_plain(prompt),
     }
-}
-
-fn stty(args: &[&str]) -> bool {
-    use std::process::Stdio;
-    // Failure (non-terminal stdin) is expected and handled by the caller;
-    // keep `stty`'s own stderr out of the user's output.
-    Command::new("stty")
-        .args(args)
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|status| status.success())
 }
 
 fn read_line_plain(prompt: &str) -> io::Result<Option<String>> {
@@ -216,17 +211,81 @@ fn read_line_plain(prompt: &str) -> io::Result<Option<String>> {
     }
 }
 
+/// One step of ANSI-escape-sequence recognition, shared by [`display_width`]
+/// and [`render_rows`] so both treat sequences identically.
+///
+/// Correctly distinguishes the CSI *introducer* from a CSI *final byte*:
+/// `ESC [` moves into the CSI-parameter state, and only a byte in the
+/// 0x40..=0x7E final-byte range seen *there* closes the sequence. A prior
+/// version conflated the two — it fed every byte seen while "in ANSI" to
+/// the same 0x40..=0x7E check, and `[` (0x5B) is itself inside that range,
+/// so the introducer immediately closed the state it had just opened,
+/// leaving the two parameter/final bytes of every sequence (e.g. `38` and
+/// `m` in `\x1b[38;5;242m`) treated as plain visible text. `AnsiState`
+/// makes "just saw ESC" and "inside CSI params" two different states so
+/// the introducer can never be mistaken for a final byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnsiState {
+    /// Not inside an escape sequence; the next byte is ordinary text
+    /// unless it is ESC.
+    Normal,
+    /// Just consumed ESC; only `[` continues into a CSI, anything else
+    /// ends the (two-byte) escape immediately.
+    Escaped,
+    /// Inside `ESC [ ... `; consuming parameter/intermediate bytes until
+    /// a final byte (0x40..=0x7E) closes the sequence.
+    Csi,
+}
+
+impl AnsiState {
+    /// Advances the state machine by one character. Returns `true` when
+    /// `ch` is ordinary visible text that the caller should measure —
+    /// i.e. it was not part of an escape sequence and did not just
+    /// transition into or out of one.
+    fn step(&mut self, ch: char) -> bool {
+        match (*self, ch) {
+            (Self::Normal, '\x1b') => {
+                *self = Self::Escaped;
+                false
+            }
+            (Self::Normal, _) => true,
+            (Self::Escaped, '[') => {
+                *self = Self::Csi;
+                false
+            }
+            (Self::Escaped, _) => {
+                // A non-CSI escape (sibsh never emits these, but a custom
+                // `prompt` template or pasted input might): the sequence
+                // is exactly ESC + this byte.
+                *self = Self::Normal;
+                false
+            }
+            (Self::Csi, ch) if is_csi_final_byte(ch) => {
+                *self = Self::Normal;
+                false
+            }
+            (Self::Csi, _) => false,
+        }
+    }
+}
+
+/// True for a byte that legally terminates a CSI sequence (`ESC [ ... final`).
+/// The final byte is any of `@` through `~` (0x40..=0x7E) per ECMA-48 — not
+/// only ASCII letters. Only meaningful once already inside a CSI (see
+/// [`AnsiState`]): `[`, the CSI introducer, also falls in this range, so
+/// this check must never be applied to the byte immediately after ESC.
+fn is_csi_final_byte(ch: char) -> bool {
+    matches!(ch as u32, 0x40..=0x7e)
+}
+
 /// Visible terminal cell width of `s`, skipping ANSI escape sequences.
 /// Wide CJK characters count as 2 cells, nerd-font private-use glyphs as 1.
 fn display_width(s: &str) -> usize {
     let mut width = 0;
-    let mut in_ansi = false;
+    let mut state = AnsiState::Normal;
     for ch in s.chars() {
-        match ch {
-            '\x1b' => in_ansi = true,
-            'a'..='z' | 'A'..='Z' if in_ansi => in_ansi = false,
-            _ if in_ansi => {}
-            _ => width += char_width(ch),
+        if state.step(ch) {
+            width += char_width(ch);
         }
     }
     width
@@ -271,24 +330,21 @@ fn render_rows(prompt: &str, line: &str, term_cols: usize) -> usize {
     let full = format!("{prompt}{line}");
     let mut rows = 1usize;
     let mut col = 0usize;
-    let mut in_ansi = false;
+    let mut state = AnsiState::Normal;
     for ch in full.chars() {
-        match ch {
-            '\x1b' => in_ansi = true,
-            'a'..='z' | 'A'..='Z' if in_ansi => in_ansi = false,
-            _ if in_ansi => {}
-            '\n' => {
+        if !state.step(ch) {
+            continue;
+        }
+        if ch == '\n' {
+            rows += 1;
+            col = 0;
+        } else {
+            let cw = char_width(ch);
+            if col + cw > term_cols {
                 rows += 1;
-                col = 0;
-            }
-            ch => {
-                let cw = char_width(ch);
-                if col + cw > term_cols {
-                    rows += 1;
-                    col = cw;
-                } else {
-                    col += cw;
-                }
+                col = cw;
+            } else {
+                col += cw;
             }
         }
     }
@@ -536,6 +592,14 @@ fn read_line_raw(
 
 /// Reads the rest of an escape sequence (`ESC [ <key>` style) and applies the
 /// supported keys: arrows (with history navigation), Home/End, Delete.
+///
+/// A bare `ESC` with nothing following (the Escape key on its own) reads 0
+/// bytes and is correctly a no-op. `ESC` followed by anything other than
+/// `[` is a meta/Alt chord (many terminals send `Alt+x` as `ESC x`): sibsh
+/// has no bound action for those, but the byte itself is a real keystroke
+/// and is inserted into the buffer verbatim instead of being dropped, so
+/// Alt-chords degrade to "insert the plain key" rather than "lose a
+/// keystroke with no feedback".
 #[allow(clippy::too_many_arguments)]
 fn handle_escape(
     stdin: &mut impl Read,
@@ -548,7 +612,17 @@ fn handle_escape(
     painter: &mut Painter,
     out: &mut impl Write,
 ) -> io::Result<()> {
-    if stdin.read(byte)? == 0 || byte[0] != b'[' {
+    if stdin.read(byte)? == 0 {
+        return Ok(()); // bare Escape key: no-op.
+    }
+    if byte[0] != b'[' {
+        // Not a CSI sequence: treat the byte as a literal keystroke rather
+        // than silently discarding it.
+        for ch in read_char(stdin, byte)?.chars() {
+            chars.insert(*cursor, ch);
+            *cursor += 1;
+        }
+        painter.repaint(out, chars, *cursor)?;
         return Ok(());
     }
     if stdin.read(byte)? == 0 {
@@ -818,6 +892,60 @@ mod tests {
     }
 
     #[test]
+    fn csi_introducer_bracket_is_never_mistaken_for_a_final_byte() {
+        // '[' (0x5B) sits inside the 0x40..=0x7E CSI final-byte range, but
+        // it is the CSI *introducer*, not a final byte. A naive
+        // "in_ansi && is_csi_final_byte(ch)" check applied to the byte
+        // right after ESC would close the sequence one byte too early,
+        // treating the rest of the sequence's parameter bytes and its
+        // real final byte as visible text. `AnsiState` keeps "just saw
+        // ESC" and "inside CSI params" as distinct states specifically to
+        // prevent this.
+        let mut state = AnsiState::Normal;
+        assert!(!state.step('\x1b'));
+        assert!(!state.step('['));
+        assert_eq!(state, AnsiState::Csi, "'[' must enter Csi, not close it");
+        assert!(!state.step('3'));
+        assert!(!state.step('8'));
+        assert!(!state.step('m'));
+        assert_eq!(state, AnsiState::Normal, "'m' is the real final byte");
+    }
+
+    #[test]
+    fn display_width_correctly_measures_real_sgr_sequences() {
+        // The exact multi-parameter SGR shape `prompt.rs` emits, e.g.
+        // `clr::BRAND` = "\x1b[1;38;5;141m". Regresses a bug where the
+        // CSI introducer '[' was mistaken for a final byte, causing the
+        // parameter digits and the true final byte to be measured as
+        // visible width instead of skipped.
+        let s = "\x1b[1;38;5;141m[sibsh]\x1b[0m \x1b[38;5;242m\u{256d}\u{2500}\x1b[0m";
+        assert_eq!(display_width(s), 10); // "[sibsh] " + ╭─
+    }
+
+    #[test]
+    fn multiple_consecutive_sgr_sequences_all_get_skipped() {
+        let s = "\x1b[1m\x1b[38;5;9m\x1b[4mBOLD-RED-UNDERLINE\x1b[0m";
+        assert_eq!(display_width(s), "BOLD-RED-UNDERLINE".chars().count());
+    }
+
+    #[test]
+    fn display_width_closes_sequences_with_symbol_final_bytes() {
+        // CSI final bytes are 0x40..=0x7E per ECMA-48, not only ASCII
+        // letters; `@` is a legal (if unusual) final byte.
+        let s = "\x1b[3@visible text";
+        assert_eq!(display_width(s), "visible text".chars().count());
+    }
+
+    #[test]
+    fn bare_non_csi_escape_is_swallowed_as_a_two_byte_sequence() {
+        // ESC followed by anything other than '[' (e.g. stray ESC bytes
+        // from pasted input) consumes exactly two bytes without
+        // corrupting measurement of what follows.
+        let s = "\x1bcvisible";
+        assert_eq!(display_width(s), "visible".chars().count());
+    }
+
+    #[test]
     fn char_width_handles_multibyte_classes() {
         assert_eq!(char_width('a'), 1);
         assert_eq!(char_width('é'), 1);
@@ -843,6 +971,14 @@ mod tests {
         assert_eq!(render_rows("", &"中".repeat(41), 80), 2);
         // ANSI escapes add no width.
         assert_eq!(render_rows("\x1b[31m❯\x1b[0m ", &"z".repeat(78), 80), 1);
+    }
+
+    #[test]
+    fn render_rows_still_correct_with_symbol_terminated_sequences() {
+        let prompt = "\x1b[3@> ";
+        assert_eq!(render_rows(prompt, "hello", 80), 1);
+        assert_eq!(render_rows(prompt, &"x".repeat(78), 80), 1);
+        assert_eq!(render_rows(prompt, &"x".repeat(79), 80), 2);
     }
 
     #[test]

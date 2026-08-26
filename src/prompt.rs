@@ -40,8 +40,6 @@ pub enum IconMode {
 }
 
 impl IconMode {
-    /// Maps the `icons` config key: `"ascii"` selects fallbacks, anything
-    /// else (including unset) uses Nerd Font glyphs.
     pub fn from_config(value: Option<&str>) -> Self {
         match value.map(str::trim) {
             Some(v) if v.eq_ignore_ascii_case("ascii") => Self::Ascii,
@@ -50,7 +48,6 @@ impl IconMode {
     }
 }
 
-/// One glyph set for the active [`IconMode`].
 struct Glyphs {
     top: &'static str,
     bottom: &'static str,
@@ -78,7 +75,7 @@ impl Glyphs {
                 ok_ptr: "\u{276f}",         // ❯
                 err_ptr: "\u{276d}",        // ❭
                 root_ptr: "#",
-                branch: "\u{f418}", //
+                branch: "\u{f418}",
                 untracked: "?",
                 modified: "!",
                 ahead: "\u{21e1}",  // ⇡
@@ -110,39 +107,29 @@ impl Glyphs {
     }
 }
 
-/// Everything the renderer needs, collected by the REPL each cycle.
 pub struct PromptCtx {
     pub last_status: i32,
     pub last_duration: Option<Duration>,
     pub icons: IconMode,
     pub git_enabled: bool,
-    /// UID 0 detection happens once per cycle in the REPL so tests can
-    /// inject either value deterministically.
     pub root: bool,
 }
 
-/// Git repository state, gathered with one `git status --porcelain -b` call.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct GitInfo {
     pub branch: String,
     pub ahead: usize,
     pub behind: usize,
-    /// Modified or staged entries (`!N`).
     pub modified: usize,
-    /// Untracked entries (`?N`).
     pub untracked: usize,
 }
 
 const DURATION_MIN: Duration = Duration::from_millis(2000);
 const PATH_MAX_COMPONENTS: usize = 3;
 
-/// Prompt renderer namespace. All state arrives through [`PromptCtx`].
 pub struct Prompt;
 
 impl Prompt {
-    /// Renders the built-in two-line prompt. Each segment appears only
-    /// when its data is available; segments are collected and joined so no
-    /// intermediate string mutation is needed.
     pub fn render(ctx: &PromptCtx) -> String {
         let g = Glyphs::new(ctx.icons);
         let root = ctx.root;
@@ -151,7 +138,6 @@ impl Prompt {
 
         let mut segs: Vec<String> = Vec::new();
 
-        // Brand badge always leads the line.
         segs.push(format!(
             "{brand}[sibsh]{reset}",
             brand = clr::BRAND,
@@ -159,7 +145,6 @@ impl Prompt {
         ));
 
         if root {
-            // Root mode: identity marker plus location, nothing else.
             segs.push(format!(
                 "{ptr}#{reset}",
                 ptr = clr::ROOT_PTR,
@@ -223,7 +208,6 @@ impl Prompt {
             segs = segs.join(" "),
         );
 
-        // Bottom line: frame plus a state-colored pointer.
         let (pointer_color, pointer) = match (root, failed) {
             (true, _) => (clr::ROOT_PTR, g.root_ptr),
             (_, true) => (clr::ERR, g.err_ptr),
@@ -238,8 +222,6 @@ impl Prompt {
         )
     }
 
-    /// Renders a user-defined single-line template. Supported placeholders:
-    /// `{user}`, `{host}`, `{cwd}`, `{status}`, `{branch}`.
     pub fn render_with(template: &str, ctx: &PromptCtx) -> String {
         let (_, _, display_path) = identity();
         let branch = git_info().map_or_else(String::new, |info| info.branch);
@@ -252,8 +234,6 @@ impl Prompt {
             + " "
     }
 
-    /// Custom templates replace the built-in design entirely; otherwise the
-    /// two-line renderer runs.
     pub fn render_auto(template: Option<&str>, ctx: &PromptCtx) -> String {
         match template {
             Some(t) if !t.trim().is_empty() => Self::render_with(t, ctx),
@@ -262,7 +242,6 @@ impl Prompt {
     }
 }
 
-/// `(user, hostname, display path)` with `~` substitution applied.
 fn identity() -> (String, String, String) {
     let user = env::var("USER")
         .or_else(|_| env::var("USERNAME"))
@@ -279,8 +258,6 @@ fn identity() -> (String, String, String) {
     (user, hostname, display_path)
 }
 
-/// Converts an absolute path for display: `$HOME` becomes `~`, and deeper
-/// than [`PATH_MAX_COMPONENTS`] levels the leading segments collapse to `…/`.
 fn display_path(cwd: &Path) -> String {
     let home = env::var("HOME").unwrap_or_default();
     let raw = cwd.to_string_lossy();
@@ -292,13 +269,9 @@ fn display_path(cwd: &Path) -> String {
     truncate_path(&shortened, PATH_MAX_COMPONENTS)
 }
 
-/// Keeps the last `max_components` path segments, prefixing `…/` when any
-/// were dropped. Pure string work so tests never touch the filesystem.
 fn truncate_path(path: &str, max_components: usize) -> String {
     let mut comps: Vec<&str> = path.split('/').filter(|c| !c.is_empty()).collect();
     if comps.len() <= max_components {
-        // Preserve the exact input shape (leading `/`, trailing `/`) below
-        // the threshold.
         return path.to_string();
     }
     let dropped = comps.split_off(comps.len() - max_components);
@@ -306,7 +279,6 @@ fn truncate_path(path: &str, max_components: usize) -> String {
     format!("…/{}", kept.join("/"))
 }
 
-/// Formats the timer text; `None` hides the segment under the 2s threshold.
 fn duration_text(duration: Option<Duration>) -> Option<String> {
     let d = duration?;
     if d <= DURATION_MIN {
@@ -320,8 +292,6 @@ fn duration_text(duration: Option<Duration>) -> Option<String> {
     })
 }
 
-/// Formats dirty-state flags like `[⇡2 ⇣1 !3 ?1]`; `None` when the tree is
-/// clean and synced.
 fn git_flags(info: &GitInfo, g: &Glyphs) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     if info.ahead > 0 {
@@ -343,7 +313,6 @@ fn git_flags(info: &GitInfo, g: &Glyphs) -> Option<String> {
     }
 }
 
-/// `on  main [flags]` colored segment, or `None` when git produced nothing.
 fn git_segment(info: &GitInfo, g: &Glyphs) -> String {
     let flags_part = git_flags(info, g).map_or_else(String::new, |flags| {
         format!(
@@ -362,18 +331,12 @@ fn git_segment(info: &GitInfo, g: &Glyphs) -> String {
     )
 }
 
-/// True when the session looks remote: either standard OpenSSH variable
-/// is present.
 fn is_ssh_session() -> bool {
     ["SSH_TTY", "SSH_CONNECTION"]
         .iter()
         .any(|k| env::var_os(k).is_some_and(|v| !v.is_empty()))
 }
 
-/// Detects UID 0 without libc: Linux exposes it in `/proc/self/status`;
-/// elsewhere the conventional `USER=root` / `HOME=/root` markers decide.
-/// Tests set `SIBSH_FORCE_NON_ROOT` to get the regular prompt layout
-/// regardless of the uid running the suite.
 pub fn is_root() -> bool {
     if env::var_os("SIBSH_FORCE_NON_ROOT").is_some() {
         return false;
@@ -390,7 +353,6 @@ pub fn is_root() -> bool {
     env::var("USER").as_deref() == Ok("root") || env::var("HOME").as_deref() == Ok("/root")
 }
 
-/// Language marker detection result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Runtime {
     Rust,
@@ -416,7 +378,6 @@ impl Runtime {
     }
 }
 
-/// Language marker files, checked in priority order.
 fn detect_runtime() -> Option<Runtime> {
     let cwd = env::current_dir().ok()?;
     if cwd.join("Cargo.toml").exists() {
@@ -444,8 +405,6 @@ fn has_extension(dir: &Path, exts: &[&str]) -> bool {
     })
 }
 
-/// Reads branch and dirty state with one `git status --porcelain -b` call.
-/// Returns `None` outside a repository or when git is unavailable.
 pub fn git_info() -> Option<GitInfo> {
     let cwd = env::current_dir().ok()?;
     let output = Command::new("git")
@@ -462,7 +421,6 @@ pub fn git_info() -> Option<GitInfo> {
     parse_git_status(&text)
 }
 
-/// Parses `git status --porcelain -b` output. Split out for testing.
 fn parse_git_status(text: &str) -> Option<GitInfo> {
     let mut info = GitInfo::default();
     let mut saw_branch_header = false;
@@ -482,15 +440,12 @@ fn parse_git_status(text: &str) -> Option<GitInfo> {
     saw_branch_header.then_some(info)
 }
 
-/// Handles `## main`, `## main...origin/main`, and the optional
-/// `[ahead 2, behind 1]` suffix. Fresh repos say `## No commits yet on main`.
 fn parse_branch_header(header: &str, info: &mut GitInfo) {
     let (tracking_part, suffix) = match header.split_once(" [") {
         Some((left, right)) => (left, Some(right.trim_end_matches(']'))),
         None => (header, None),
     };
 
-    // Strip the `...origin/main` upstream portion before reading the name.
     let head_part = tracking_part.split("...").next().unwrap_or(tracking_part);
     let skip = usize::from(head_part.starts_with("No commits yet on ")) * 4;
     info.branch = head_part
@@ -515,7 +470,6 @@ fn parse_branch_header(header: &str, info: &mut GitInfo) {
 mod tests {
     use super::*;
 
-    /// Strips ANSI sequences so assertions compare plain text.
     fn plain(s: &str) -> String {
         let mut out = String::new();
         let mut in_ansi = false;
@@ -565,7 +519,7 @@ mod tests {
     #[test]
     fn duration_hidden_under_two_seconds() {
         assert_eq!(duration_text(Some(Duration::from_millis(150))), None);
-        assert_eq!(duration_text(Some(DURATION_MIN)), None); // strictly above
+        assert_eq!(duration_text(Some(DURATION_MIN)), None);
         assert_eq!(duration_text(None), None);
     }
 
@@ -672,8 +626,6 @@ mod tests {
 
     #[test]
     fn git_status_without_header_is_not_a_repo_summary() {
-        // `!!` ignored entries and stray lines without `##` produce None only
-        // when no branch header exists at all.
         assert_eq!(parse_git_status("M  file.txt\n"), None);
     }
 
@@ -690,16 +642,16 @@ mod tests {
     fn render_contains_frame_brand_and_pointer() {
         let p = plain(&Prompt::render(&ctx(0)));
         assert!(p.contains("[sibsh]"));
-        assert!(p.contains('\u{256d}')); // ╭
-        assert!(p.contains('\u{2570}')); // ╰
-        assert!(p.ends_with("\u{276f} ")); // success pointer + trailing space
+        assert!(p.contains('\u{256d}'));
+        assert!(p.contains('\u{2570}'));
+        assert!(p.ends_with("\u{276f} "));
     }
 
     #[test]
     fn render_failure_shows_badge_and_error_pointer() {
         let p = plain(&Prompt::render(&ctx(127)));
         assert!(p.contains("[127 \u{2718}]"), "exit badge missing: {p:?}");
-        assert!(p.ends_with("\u{276d} ")); // error pointer
+        assert!(p.ends_with("\u{276d} "));
     }
 
     #[test]
@@ -735,7 +687,6 @@ mod tests {
         let out = Prompt::render_auto(Some("sh:{cwd}:{status}"), &c);
         assert!(out.starts_with("sh:"), "custom template must win: {out:?}");
         assert!(out.contains(":3 "));
-        // Empty/whitespace template falls back to the built-in design.
         assert!(Prompt::render_auto(Some("  "), &c).contains("[sibsh]"));
     }
 

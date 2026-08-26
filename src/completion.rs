@@ -326,6 +326,13 @@ fn up_rows(base_rows: usize, extra_rows: usize, screen_rows: usize) -> usize {
 /// Number of screen rows the render occupies when drawn from column 0 of a
 /// `term_cols`-wide terminal, accounting for line wrapping (deferred-wrap
 /// semantics, matching xterm and friends).
+///
+/// When the content ends exactly at the rightmost column (`col == term_cols`),
+/// the terminal's deferred wrap has not yet fired — the cursor is still on
+/// the last row but the *next* character will wrap to a new row. We report
+/// `rows + 1` in that case so `Painter` knows the cursor actually sits on
+/// the next logical row and the repaint must move up far enough to clear
+/// all visible lines.
 fn render_rows(prompt: &str, line: &str, term_cols: usize) -> usize {
     let full = format!("{prompt}{line}");
     let mut rows = 1usize;
@@ -347,6 +354,12 @@ fn render_rows(prompt: &str, line: &str, term_cols: usize) -> usize {
                 col += cw;
             }
         }
+    }
+    // Deferred-wrap edge: when the last character lands exactly at the
+    // terminal width the cursor sits at the rightmost column and the next
+    // keystroke will wrap. The repaint must account for this extra row.
+    if col == term_cols && term_cols > 0 {
+        rows += 1;
     }
     rows
 }
@@ -964,20 +977,25 @@ mod tests {
         assert_eq!(render_rows(prompt, "hi", 80), 2);
         // Buffer wraps the second line past 80 columns.
         assert_eq!(render_rows(prompt, &"z".repeat(200), 80), 4);
-        // Exactly-full line does not spawn an extra row (deferred wrap).
-        assert_eq!(render_rows("", &"z".repeat(80), 80), 1);
+        // Exactly-full line accounts for deferred wrap: the cursor sits at
+        // the rightmost column, and the next character will wrap to a new
+        // row, so render_rows reports one extra row.
+        assert_eq!(render_rows("", &"z".repeat(80), 80), 2);
         assert_eq!(render_rows("", &"z".repeat(81), 80), 2);
         // Wide CJK characters count double toward wrapping.
         assert_eq!(render_rows("", &"中".repeat(41), 80), 2);
-        // ANSI escapes add no width.
-        assert_eq!(render_rows("\x1b[31m❯\x1b[0m ", &"z".repeat(78), 80), 1);
+        // ANSI escapes add no width; 78 z's + 2 visible prompt chars = 80
+        // exactly, hitting deferred wrap.
+        assert_eq!(render_rows("\x1b[31m❯\x1b[0m ", &"z".repeat(78), 80), 2);
     }
 
     #[test]
     fn render_rows_still_correct_with_symbol_terminated_sequences() {
         let prompt = "\x1b[3@> ";
         assert_eq!(render_rows(prompt, "hello", 80), 1);
-        assert_eq!(render_rows(prompt, &"x".repeat(78), 80), 1);
+        // Exactly 80 visible chars: deferred wrap means one extra row.
+        assert_eq!(render_rows(prompt, &"x".repeat(78), 80), 2);
+        // 81 visible chars: wraps normally to 2 rows.
         assert_eq!(render_rows(prompt, &"x".repeat(79), 80), 2);
     }
 
